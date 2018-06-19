@@ -259,6 +259,21 @@ define Package/iptables-mod-nfqueue/description
 
 endef
 
+
+define Package/iptables-mod-conndict
+$(call Package/iptables/Module, +kmod-ipt-conndict)
+  TITLE:=Netfilter conndict match
+endef
+
+define Package/iptables-mod-conndict/description
+ iptables extension for matching conndict entries
+
+ Includes:
+  - libxt_conndict
+
+endef
+
+
 define Package/iptables-mod-hashlimit
 $(call Package/iptables/Module, +kmod-ipt-hashlimit)
   TITLE:=hashlimit matching
@@ -636,6 +651,7 @@ $(eval $(call BuildPlugin,iptables-mod-u32,$(IPT_U32-m)))
 $(eval $(call BuildPlugin,iptables-mod-nflog,$(IPT_NFLOG-m)))
 $(eval $(call BuildPlugin,iptables-mod-trace,$(IPT_DEBUG-m)))
 $(eval $(call BuildPlugin,iptables-mod-nfqueue,$(IPT_NFQUEUE-m)))
+$(eval $(call BuildPlugin,iptables-mod-conndict,$(IPT_CONNDICT-m)))
 $(eval $(call BuildPlugin,iptables-mod-checksum,$(IPT_CHECKSUM-m)))
 $(eval $(call BuildPackage,ip6tables))
 $(eval $(call BuildPlugin,ip6tables-extra,$(IPT_IPV6_EXTRA-m)))
