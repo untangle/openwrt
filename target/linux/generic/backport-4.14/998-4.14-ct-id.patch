@@ -1,0 +1,51 @@
+From 742e13429ee89e802a2eea7780877b54d45dd6ff Mon Sep 17 00:00:00 2001
+From: Brett Mastbergen <bmastbergen@untangle.com>
+Date: Fri, 22 Jun 2018 14:52:40 -0400
+Subject: [PATCH 1/2] 4.14 ct id
+
+---
+ include/uapi/linux/netfilter/nf_tables.h | 1 +
+ net/netfilter/nft_ct.c                   | 8 ++++++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/include/uapi/linux/netfilter/nf_tables.h b/include/uapi/linux/netfilter/nf_tables.h
+index a3ee277b17a1..b3bae5ffc262 100644
+--- a/include/uapi/linux/netfilter/nf_tables.h
++++ b/include/uapi/linux/netfilter/nf_tables.h
+@@ -929,6 +929,7 @@ enum nft_ct_keys {
+ 	NFT_CT_AVGPKT,
+ 	NFT_CT_ZONE,
+ 	NFT_CT_EVENTMASK,
++	NFT_CT_ID,
+ };
+ 
+ /**
+diff --git a/net/netfilter/nft_ct.c b/net/netfilter/nft_ct.c
+index 5e0d367a0988..612c03f0f4db 100644
+--- a/net/netfilter/nft_ct.c
++++ b/net/netfilter/nft_ct.c
+@@ -162,6 +162,11 @@ static void nft_ct_get_eval(const struct nft_expr *expr,
+ 	case NFT_CT_PROTOCOL:
+ 		nft_reg_store8(dest, nf_ct_protonum(ct));
+ 		return;
++	case NFT_CT_ID: {
++		unsigned int ct_id = (unsigned long)ct;
++		*dest = ct_id;
++		return;
++	}
+ #ifdef CONFIG_NF_CONNTRACK_ZONES
+ 	case NFT_CT_ZONE: {
+ 		const struct nf_conntrack_zone *zone = nf_ct_zone(ct);
+@@ -468,6 +473,9 @@ static int nft_ct_get_init(const struct nft_ctx *ctx,
+ 		len = sizeof(u16);
+ 		break;
+ #endif
++	case NFT_CT_ID:
++		len = sizeof(u64);
++		break;
+ 	default:
+ 		return -EOPNOTSUPP;
+ 	}
+-- 
+2.11.0
+

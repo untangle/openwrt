@@ -1,0 +1,101 @@
+From 68c0bb6c51f2e67001ed5c2199ba8fd452d78785 Mon Sep 17 00:00:00 2001
+From: Brett Mastbergen <bmastbergen@untangle.com>
+Date: Thu, 17 May 2018 11:17:42 -0400
+Subject: [PATCH 1/2] nftables Add ct id
+
+---
+ include/datatype.h                  |  2 ++
+ include/linux/netfilter/nf_tables.h |  1 +
+ src/ct.c                            |  2 ++
+ src/datatype.c                      | 10 ++++++++++
+ src/parser_bison.y                  |  1 +
+ 5 files changed, 16 insertions(+)
+
+diff --git a/include/datatype.h b/include/datatype.h
+index b641f0e..e44d6ed 100644
+--- a/include/datatype.h
++++ b/include/datatype.h
+@@ -88,6 +88,7 @@ enum datatypes {
+ 	TYPE_BOOLEAN,
+ 	TYPE_CT_EVENTBIT,
+ 	TYPE_IFNAME,
++	TYPE_KEY,
+ 	__TYPE_MAX
+ };
+ #define TYPE_MAX		(__TYPE_MAX - 1)
+@@ -228,6 +229,7 @@ extern const struct datatype invalid_type;
+ extern const struct datatype verdict_type;
+ extern const struct datatype nfproto_type;
+ extern const struct datatype bitmask_type;
++extern const struct datatype key_type;
+ extern const struct datatype integer_type;
+ extern const struct datatype string_type;
+ extern const struct datatype lladdr_type;
+diff --git a/include/linux/netfilter/nf_tables.h b/include/linux/netfilter/nf_tables.h
+index 88e0ca1..050b8b2 100644
+--- a/include/linux/netfilter/nf_tables.h
++++ b/include/linux/netfilter/nf_tables.h
+@@ -979,6 +979,7 @@ enum nft_ct_keys {
+ 	NFT_CT_AVGPKT,
+ 	NFT_CT_ZONE,
+ 	NFT_CT_EVENTMASK,
++	NFT_CT_ID,
+ 	NFT_CT_SRC_IP,
+ 	NFT_CT_DST_IP,
+ 	NFT_CT_SRC_IP6,
+diff --git a/src/ct.c b/src/ct.c
+index 1d50382..49aad8e 100644
+--- a/src/ct.c
++++ b/src/ct.c
+@@ -291,6 +291,8 @@ const struct ct_template ct_templates[__NFT_CT_MAX] = {
+ 					      BYTEORDER_HOST_ENDIAN, 16),
+ 	[NFT_CT_EVENTMASK]	= CT_TEMPLATE("event", &ct_event_type,
+ 					      BYTEORDER_HOST_ENDIAN, 32),
++	[NFT_CT_ID]		= CT_TEMPLATE("id", &key_type,
++					      BYTEORDER_HOST_ENDIAN, 32),
+ };
+ 
+ static void ct_print(enum nft_ct_keys key, int8_t dir, uint8_t nfproto,
+diff --git a/src/datatype.c b/src/datatype.c
+index c77d228..3570493 100644
+--- a/src/datatype.c
++++ b/src/datatype.c
+@@ -70,6 +70,7 @@ static const struct datatype *datatypes[TYPE_MAX + 1] = {
+ 	[TYPE_FIB_ADDR]         = &fib_addr_type,
+ 	[TYPE_BOOLEAN]		= &boolean_type,
+ 	[TYPE_IFNAME]		= &ifname_type,
++	[TYPE_KEY]		= &key_type,
+ };
+ 
+ const struct datatype *datatype_lookup(enum datatypes type)
+@@ -319,6 +320,15 @@ const struct datatype bitmask_type = {
+ 	.basetype	= &integer_type,
+ };
+ 
++const struct datatype key_type = {
++	.type		= TYPE_KEY,
++	.name		= "key",
++	.desc		= "key",
++	.basefmt	= "%d",
++	.size		= 4 * BITS_PER_BYTE,
++	.basetype	= &integer_type,
++};
++
+ static void integer_type_print(const struct expr *expr, struct output_ctx *octx)
+ {
+ 	const struct datatype *dtype = expr->dtype;
+diff --git a/src/parser_bison.y b/src/parser_bison.y
+index 33915ed..bbc4330 100644
+--- a/src/parser_bison.y
++++ b/src/parser_bison.y
+@@ -3670,6 +3670,7 @@ ct_key			:	L3PROTOCOL	{ $$ = NFT_CT_L3PROTOCOL; }
+ 			|	PROTO_DST	{ $$ = NFT_CT_PROTO_DST; }
+ 			|	LABEL		{ $$ = NFT_CT_LABELS; }
+ 			|	EVENT		{ $$ = NFT_CT_EVENTMASK; }
++			|	ID		{ $$ = NFT_CT_ID; }
+ 			|	ct_key_dir_optional
+ 			;
+ 
+-- 
+2.11.0
+
