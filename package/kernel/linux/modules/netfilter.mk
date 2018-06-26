@@ -518,22 +518,6 @@ endef
 $(eval $(call KernelPackage,ipt-nfqueue))
 
 
-define KernelPackage/ipt-conndict
-  TITLE:=Module for matching conndict entries
-  DEPENDS:=+kmod-ipt-conntrack
-  KCONFIG:=CONFIG_NETFILTER_XT_MATCH_CONNDICT
-  FILES:=$(foreach mod,$(IPT_CONNDICT-m),$(LINUX_DIR)/net/$(mod).ko)
-  AUTOLOAD:=$(call AutoProbe,$(notdir $(IPT_CONNDICT-m)))
-  $(call AddDepends/ipt)
-endef
-
-define KernelPackage/ipt-conndit/description
- Netfilter module for matching conndict entries
-endef
-
-$(eval $(call KernelPackage,ipt-conndict))
-
-
 define KernelPackage/ipt-debug
   TITLE:=Module for debugging/development
   KCONFIG:=$(KCONFIG_IPT_DEBUG)
