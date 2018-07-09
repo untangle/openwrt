@@ -1,0 +1,201 @@
+From 9fbfc965a0830960f44a994a2a8d9b6972943518 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Wed, 23 May 2018 09:17:19 +0200
+Subject: [PATCH 2/3] netfilter: add struct nf_nat_hook and use it
+
+Move decode_session() and parse_nat_setup_hook() indirections to struct
+nf_nat_hook structure.
+
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ include/linux/netfilter.h            | 21 ++++++++++++++++-----
+ include/net/netfilter/nf_nat_core.h  |  7 -------
+ net/netfilter/core.c                 |  8 +++-----
+ net/netfilter/nf_conntrack_core.c    |  5 -----
+ net/netfilter/nf_conntrack_netlink.c | 10 +++++-----
+ net/netfilter/nf_nat_core.c          | 23 ++++++++++++-----------
+ 6 files changed, 36 insertions(+), 38 deletions(-)
+
+diff --git a/include/linux/netfilter.h b/include/linux/netfilter.h
+index 7e32d3d4dc0c..5cec147912b5 100644
+--- a/include/linux/netfilter.h
++++ b/include/linux/netfilter.h
+@@ -331,18 +331,29 @@ int nf_register_afinfo(const struct nf_afinfo *afinfo);
+ void nf_unregister_afinfo(const struct nf_afinfo *afinfo);
+ 
+ #include <net/flow.h>
+-extern void (*nf_nat_decode_session_hook)(struct sk_buff *, struct flowi *);
++
++struct nf_conn;
++enum nf_nat_manip_type;
++struct nlattr;
++
++struct nf_nat_hook {
++	int (*parse_nat_setup)(struct nf_conn *ct, enum nf_nat_manip_type manip,
++			       const struct nlattr *attr);
++	void (*decode_session)(struct sk_buff *skb, struct flowi *fl);
++};
++
++extern struct nf_nat_hook __rcu *nf_nat_hook;
+ 
+ static inline void
+ nf_nat_decode_session(struct sk_buff *skb, struct flowi *fl, u_int8_t family)
+ {
+ #ifdef CONFIG_NF_NAT_NEEDED
+-	void (*decodefn)(struct sk_buff *, struct flowi *);
++	struct nf_nat_hook *nat_hook;
+ 
+ 	rcu_read_lock();
+-	decodefn = rcu_dereference(nf_nat_decode_session_hook);
+-	if (decodefn)
+-		decodefn(skb, fl);
++	nat_hook = rcu_dereference(nf_nat_hook);
++	if (nat_hook->decode_session)
++		nat_hook->decode_session(skb, fl);
+ 	rcu_read_unlock();
+ #endif
+ }
+diff --git a/include/net/netfilter/nf_nat_core.h b/include/net/netfilter/nf_nat_core.h
+index 235bd0e9a5aa..0654589c271e 100644
+--- a/include/net/netfilter/nf_nat_core.h
++++ b/include/net/netfilter/nf_nat_core.h
+@@ -22,11 +22,4 @@ static inline int nf_nat_initialized(struct nf_conn *ct,
+ 		return ct->status & IPS_DST_NAT_DONE;
+ }
+ 
+-struct nlattr;
+-
+-extern int
+-(*nfnetlink_parse_nat_setup_hook)(struct nf_conn *ct,
+-				  enum nf_nat_manip_type manip,
+-				  const struct nlattr *attr);
+-
+ #endif /* _NF_NAT_CORE_H */
+diff --git a/net/netfilter/core.c b/net/netfilter/core.c
+index 2f2a7ee5d859..21cc5af00281 100644
+--- a/net/netfilter/core.c
++++ b/net/netfilter/core.c
+@@ -530,6 +530,9 @@ void (*ip_ct_attach)(struct sk_buff *, const struct sk_buff *)
+ 		__rcu __read_mostly;
+ EXPORT_SYMBOL(ip_ct_attach);
+ 
++struct nf_nat_hook __rcu *nf_nat_hook __read_mostly;
++EXPORT_SYMBOL_GPL(nf_nat_hook);
++
+ void nf_ct_attach(struct sk_buff *new, const struct sk_buff *skb)
+ {
+ 	void (*attach)(struct sk_buff *, const struct sk_buff *);
+@@ -564,11 +567,6 @@ const struct nf_conntrack_zone nf_ct_zone_dflt = {
+ EXPORT_SYMBOL_GPL(nf_ct_zone_dflt);
+ #endif /* CONFIG_NF_CONNTRACK */
+ 
+-#ifdef CONFIG_NF_NAT_NEEDED
+-void (*nf_nat_decode_session_hook)(struct sk_buff *, struct flowi *);
+-EXPORT_SYMBOL(nf_nat_decode_session_hook);
+-#endif
+-
+ static void __net_init __netfilter_net_init(struct nf_hook_entries **e, int max)
+ {
+ 	int h;
+diff --git a/net/netfilter/nf_conntrack_core.c b/net/netfilter/nf_conntrack_core.c
+index fd4e7e72265d..d7dcdbedf971 100644
+--- a/net/netfilter/nf_conntrack_core.c
++++ b/net/netfilter/nf_conntrack_core.c
+@@ -60,11 +60,6 @@
+ 
+ #define NF_CONNTRACK_VERSION	"0.5.0"
+ 
+-int (*nfnetlink_parse_nat_setup_hook)(struct nf_conn *ct,
+-				      enum nf_nat_manip_type manip,
+-				      const struct nlattr *attr) __read_mostly;
+-EXPORT_SYMBOL_GPL(nfnetlink_parse_nat_setup_hook);
+-
+ __cacheline_aligned_in_smp spinlock_t nf_conntrack_locks[CONNTRACK_LOCKS];
+ EXPORT_SYMBOL_GPL(nf_conntrack_locks);
+ 
+diff --git a/net/netfilter/nf_conntrack_netlink.c b/net/netfilter/nf_conntrack_netlink.c
+index de4053d84364..04af3ea294a3 100644
+--- a/net/netfilter/nf_conntrack_netlink.c
++++ b/net/netfilter/nf_conntrack_netlink.c
+@@ -1385,11 +1385,11 @@ ctnetlink_parse_nat_setup(struct nf_conn *ct,
+ 			  enum nf_nat_manip_type manip,
+ 			  const struct nlattr *attr)
+ {
+-	typeof(nfnetlink_parse_nat_setup_hook) parse_nat_setup;
++	struct nf_nat_hook *nat_hook;
+ 	int err;
+ 
+-	parse_nat_setup = rcu_dereference(nfnetlink_parse_nat_setup_hook);
+-	if (!parse_nat_setup) {
++	nat_hook = rcu_dereference(nf_nat_hook);
++	if (!nat_hook) {
+ #ifdef CONFIG_MODULES
+ 		rcu_read_unlock();
+ 		nfnl_unlock(NFNL_SUBSYS_CTNETLINK);
+@@ -1400,13 +1400,13 @@ ctnetlink_parse_nat_setup(struct nf_conn *ct,
+ 		}
+ 		nfnl_lock(NFNL_SUBSYS_CTNETLINK);
+ 		rcu_read_lock();
+-		if (nfnetlink_parse_nat_setup_hook)
++		if (nat_hook->parse_nat_setup)
+ 			return -EAGAIN;
+ #endif
+ 		return -EOPNOTSUPP;
+ 	}
+ 
+-	err = parse_nat_setup(ct, manip, attr);
++	err = nat_hook->parse_nat_setup(ct, manip, attr);
+ 	if (err == -EAGAIN) {
+ #ifdef CONFIG_MODULES
+ 		rcu_read_unlock();
+diff --git a/net/netfilter/nf_nat_core.c b/net/netfilter/nf_nat_core.c
+index af8345fc4fbd..4e5619415123 100644
+--- a/net/netfilter/nf_nat_core.c
++++ b/net/netfilter/nf_nat_core.c
+@@ -801,6 +801,13 @@ static struct nf_ct_helper_expectfn follow_master_nat = {
+ 	.expectfn	= nf_nat_follow_master,
+ };
+ 
++struct nf_nat_hook nat_hook = {
++	.parse_nat_setup	= nfnetlink_parse_nat_setup,
++#ifdef CONFIG_XFRM
++	.decode_session		= __nf_nat_decode_session,
++#endif
++};
++
+ static int __init nf_nat_init(void)
+ {
+ 	int ret, i;
+@@ -826,13 +833,9 @@ static int __init nf_nat_init(void)
+ 
+ 	nf_ct_helper_expectfn_register(&follow_master_nat);
+ 
+-	BUG_ON(nfnetlink_parse_nat_setup_hook != NULL);
+-	RCU_INIT_POINTER(nfnetlink_parse_nat_setup_hook,
+-			   nfnetlink_parse_nat_setup);
+-#ifdef CONFIG_XFRM
+-	BUG_ON(nf_nat_decode_session_hook != NULL);
+-	RCU_INIT_POINTER(nf_nat_decode_session_hook, __nf_nat_decode_session);
+-#endif
++	WARN_ON(nf_nat_hook != NULL);
++	RCU_INIT_POINTER(nf_nat_hook, &nat_hook);
++
+ 	return 0;
+ }
+ 
+@@ -845,10 +848,8 @@ static void __exit nf_nat_cleanup(void)
+ 
+ 	nf_ct_extend_unregister(&nat_extend);
+ 	nf_ct_helper_expectfn_unregister(&follow_master_nat);
+-	RCU_INIT_POINTER(nfnetlink_parse_nat_setup_hook, NULL);
+-#ifdef CONFIG_XFRM
+-	RCU_INIT_POINTER(nf_nat_decode_session_hook, NULL);
+-#endif
++	RCU_INIT_POINTER(nf_nat_hook, NULL);
++
+ 	synchronize_rcu();
+ 
+ 	for (i = 0; i < NFPROTO_NUMPROTO; i++)
+-- 
+2.11.0
+
