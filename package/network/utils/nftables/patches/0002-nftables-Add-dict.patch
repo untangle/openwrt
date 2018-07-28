@@ -1,23 +1,23 @@
-From 6da17f76ecb730363b1e002702e3ce29aaed1879 Mon Sep 17 00:00:00 2001
+From 6c7d6cde6a340bbdd22ecaf66796d19b1165124f Mon Sep 17 00:00:00 2001
 From: Brett Mastbergen <bmastbergen@untangle.com>
 Date: Mon, 25 Jun 2018 11:22:12 -0400
 Subject: [PATCH 2/2] nftables Add dict
 
 ---
  include/Makefile.am       |   1 +
- include/datatype.h        |   2 +
- include/dict.h            |   6 +++
- include/expression.h      |  12 +++++
- include/statement.h       |  13 +++++
+ include/datatype.h        |   4 ++
+ include/dict.h            |   6 ++
+ include/expression.h      |  12 ++++
+ include/statement.h       |  15 ++++
  src/Makefile.am           |   1 +
- src/datatype.c            |  19 ++++++++
- src/dict.c                | 119 ++++++++++++++++++++++++++++++++++++++++++++++
- src/evaluate.c            |  29 +++++++++++
- src/netlink_delinearize.c |  94 ++++++++++++++++++++++++++++++++++++
- src/netlink_linearize.c   |  53 +++++++++++++++++++++
- src/parser_bison.y        | 102 +++++++++++++++++++++++++++++++++++++--
- src/scanner.l             |   9 ++++
- 13 files changed, 455 insertions(+), 5 deletions(-)
+ src/datatype.c            |  55 +++++++++++++++
+ src/dict.c                | 128 ++++++++++++++++++++++++++++++++++
+ src/evaluate.c            |  36 ++++++++++
+ src/netlink_delinearize.c | 118 ++++++++++++++++++++++++++++++++
+ src/netlink_linearize.c   |  69 +++++++++++++++++++
+ src/parser_bison.y        | 171 ++++++++++++++++++++++++++++++++++++++++++++--
+ src/scanner.l             |   9 +++
+ 13 files changed, 620 insertions(+), 5 deletions(-)
  create mode 100644 include/dict.h
  create mode 100644 src/dict.c
 
@@ -34,21 +34,23 @@ index 6f5a2d1..9f91641 100644
  			gmputil.h	\
  			iface.h		\
 diff --git a/include/datatype.h b/include/datatype.h
-index e44d6ed..5d542ef 100644
+index 63d722c..aafae20 100644
 --- a/include/datatype.h
 +++ b/include/datatype.h
-@@ -89,6 +89,7 @@ enum datatypes {
+@@ -89,6 +89,8 @@ enum datatypes {
  	TYPE_CT_EVENTBIT,
  	TYPE_IFNAME,
- 	TYPE_KEY,
+ 	TYPE_INT32,
++	TYPE_INT64,
 +	TYPE_BOOL,
  	__TYPE_MAX
  };
  #define TYPE_MAX		(__TYPE_MAX - 1)
-@@ -230,6 +231,7 @@ extern const struct datatype verdict_type;
+@@ -230,6 +232,8 @@ extern const struct datatype verdict_type;
  extern const struct datatype nfproto_type;
  extern const struct datatype bitmask_type;
- extern const struct datatype key_type;
+ extern const struct datatype int_type;
++extern const struct datatype int64_type;
 +extern const struct datatype bool_type;
  extern const struct datatype integer_type;
  extern const struct datatype string_type;
@@ -110,10 +112,10 @@ index 2bb51e5..88179cf 100644
  };
  
 diff --git a/include/statement.h b/include/statement.h
-index 5a907aa..7a4f795 100644
+index 5a907aa..19e29e0 100644
 --- a/include/statement.h
 +++ b/include/statement.h
-@@ -231,6 +231,16 @@ struct xt_stmt {
+@@ -231,6 +231,18 @@ struct xt_stmt {
  
  extern struct stmt *xt_stmt_alloc(const struct location *loc);
  
@@ -122,15 +124,17 @@ index 5a907aa..7a4f795 100644
 +	const char *		table;
 +	const char *		field;
 +	const char *		value;
-+	enum datatypes		type;
++	const struct datatype	*data_type;
++	struct expr		*set_expr;
++	uint32_t		set_flag;
 +};
 +
-+extern struct stmt *dict_stmt_alloc(const struct location *loc);
++extern struct stmt *dict_stmt_alloc(const struct location *loc, const struct datatype *data_type);
 +
  /**
   * enum stmt_types - statement types
   *
-@@ -258,6 +268,7 @@ extern struct stmt *xt_stmt_alloc(const struct location *loc);
+@@ -258,6 +270,7 @@ extern struct stmt *xt_stmt_alloc(const struct location *loc);
   * @STMT_FLOW_OFFLOAD:	flow offload statement
   * @STMT_CONNLIMIT:	connection limit statement
   * @STMT_MAP:		map statement
@@ -138,7 +142,7 @@ index 5a907aa..7a4f795 100644
   */
  enum stmt_types {
  	STMT_INVALID,
-@@ -284,6 +295,7 @@ enum stmt_types {
+@@ -284,6 +297,7 @@ enum stmt_types {
  	STMT_FLOW_OFFLOAD,
  	STMT_CONNLIMIT,
  	STMT_MAP,
@@ -146,7 +150,7 @@ index 5a907aa..7a4f795 100644
  };
  
  /**
-@@ -347,6 +359,7 @@ struct stmt {
+@@ -347,6 +361,7 @@ struct stmt {
  		struct objref_stmt	objref;
  		struct flow_stmt	flow;
  		struct map_stmt		map;
@@ -167,21 +171,56 @@ index a4ad8cb..0981c52 100644
  		rt.c				\
  		numgen.c			\
 diff --git a/src/datatype.c b/src/datatype.c
-index 3570493..ccf83c6 100644
+index 999ccff..6e0102a 100644
 --- a/src/datatype.c
 +++ b/src/datatype.c
-@@ -71,6 +71,7 @@ static const struct datatype *datatypes[TYPE_MAX + 1] = {
+@@ -71,6 +71,8 @@ static const struct datatype *datatypes[TYPE_MAX + 1] = {
  	[TYPE_BOOLEAN]		= &boolean_type,
  	[TYPE_IFNAME]		= &ifname_type,
- 	[TYPE_KEY]		= &key_type,
+ 	[TYPE_INT32]		= &int_type,
++	[TYPE_INT64]		= &int64_type,
 +	[TYPE_BOOL]		= &bool_type,
  };
  
  const struct datatype *datatype_lookup(enum datatypes type)
-@@ -329,6 +330,24 @@ const struct datatype key_type = {
- 	.basetype	= &integer_type,
+@@ -352,6 +354,59 @@ const struct datatype int_type = {
+ 	.parse		= int_type_parse,
  };
  
++static void int64_type_print(const struct expr *expr, struct output_ctx *octx)
++{
++	uint64_t value;
++
++	mpz_export_data(&value, expr->value, BYTEORDER_BIG_ENDIAN, 8);
++	nft_print(octx, "%"PRIu64, value);
++}
++
++static struct error_record *int64_type_parse(const struct expr *sym,
++						     struct expr **res)
++{
++	uint64_t value;
++	char *end;
++
++	value = strtoull(sym->identifier, &end, 10);
++	*res = constant_expr_alloc(&sym->location, &int64_type,
++				   BYTEORDER_BIG_ENDIAN, 8 * BITS_PER_BYTE,
++				   &value);
++	return NULL;
++}
++
++
++const struct datatype int64_type = {
++	.type		= TYPE_INT64,
++	.name		= "int64",
++	.desc		= "int64",
++	.basefmt	= "%llu",
++	.size		= 8 * BITS_PER_BYTE,
++	.byteorder	= BYTEORDER_BIG_ENDIAN,
++	.basetype	= &integer_type,
++	.print		= int64_type_print,
++	.parse		= int64_type_parse,
++};
++
 +static const struct symbol_table bool_tbl = {
 +	.base		= BASE_DECIMAL,
 +	.symbols	= {
@@ -196,6 +235,7 @@ index 3570493..ccf83c6 100644
 +	.name		= "bool",
 +	.desc		= "bool",
 +	.size		= 1 * BITS_PER_BYTE,
++	.byteorder	= BYTEORDER_BIG_ENDIAN,
 +	.basetype	= &integer_type,
 +	.sym_tbl	= &bool_tbl,
 +};
@@ -205,10 +245,10 @@ index 3570493..ccf83c6 100644
  	const struct datatype *dtype = expr->dtype;
 diff --git a/src/dict.c b/src/dict.c
 new file mode 100644
-index 0000000..e08e043
+index 0000000..dc4eee9
 --- /dev/null
 +++ b/src/dict.c
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,128 @@
 +/*
 + * Dict expression definitions.
 + *
@@ -234,7 +274,14 @@ index 0000000..e08e043
 +	expr_print(stmt->dict.expr, octx);
 +	if(stmt->dict.table)
 +		printf(" %s", stmt->dict.table);
-+	printf(" \"%s\" long_string \"%s\"", stmt->dict.field, stmt->dict.value);
++	if(stmt->dict.value && stmt->dict.set_flag) {
++		printf(" %s long_string set %s", stmt->dict.field, stmt->dict.value);
++	} else if(stmt->dict.set_expr) {
++		printf(" %s %s set ", stmt->dict.field, stmt->dict.data_type->name);
++		expr_print(stmt->dict.set_expr, octx);
++	} else if(stmt->dict.value) {
++		printf(" %s long_string %s", stmt->dict.field, stmt->dict.value);
++	}
 +}
 +
 +static void dict_stmt_destroy(struct stmt *stmt)
@@ -251,11 +298,13 @@ index 0000000..e08e043
 +	.destroy	= dict_stmt_destroy,
 +};
 +
-+struct stmt *dict_stmt_alloc(const struct location *loc)
++struct stmt *dict_stmt_alloc(const struct location *loc, const struct datatype *data_type)
 +{
 +	struct stmt *stmt;
 +
 +	stmt = stmt_alloc(loc, &dict_stmt_ops);
++	stmt->dict.data_type = data_type;
++
 +	return stmt;
 +}
 +
@@ -329,7 +378,7 @@ index 0000000..e08e043
 +	return expr;
 +}
 diff --git a/src/evaluate.c b/src/evaluate.c
-index c4ee3cc..ff96008 100644
+index c4ee3cc..820de0f 100644
 --- a/src/evaluate.c
 +++ b/src/evaluate.c
 @@ -1403,6 +1403,26 @@ static int expr_evaluate_hash(struct eval_ctx *ctx, struct expr **exprp)
@@ -368,19 +417,26 @@ index c4ee3cc..ff96008 100644
  	default:
  		BUG("unknown expression type %s\n", (*expr)->ops->name);
  	}
-@@ -2036,6 +2058,11 @@ static int stmt_evaluate_ct(struct eval_ctx *ctx, struct stmt *stmt)
+@@ -2036,6 +2058,18 @@ static int stmt_evaluate_ct(struct eval_ctx *ctx, struct stmt *stmt)
  				 &stmt->ct.expr);
  }
  
 +static int stmt_evaluate_dict(struct eval_ctx *ctx, struct stmt *stmt)
 +{
-+	return 0;
++	if(stmt->dict.data_type) {
++		return stmt_evaluate_arg(ctx, stmt,
++					 stmt->dict.data_type,
++					 stmt->dict.data_type->size,
++					 stmt->dict.data_type->byteorder,
++					 &stmt->dict.set_expr);
++	} else
++		return 0;
 +}
 +
  static int reject_payload_gen_dependency_tcp(struct eval_ctx *ctx,
  					     struct stmt *stmt,
  					     struct expr **payload)
-@@ -2772,6 +2799,8 @@ int stmt_evaluate(struct eval_ctx *ctx, struct stmt *stmt)
+@@ -2772,6 +2806,8 @@ int stmt_evaluate(struct eval_ctx *ctx, struct stmt *stmt)
  		return stmt_evaluate_objref(ctx, stmt);
  	case STMT_MAP:
  		return stmt_evaluate_map(ctx, stmt);
@@ -390,10 +446,10 @@ index c4ee3cc..ff96008 100644
  		BUG("unknown statement type %s\n", stmt->ops->name);
  	}
 diff --git a/src/netlink_delinearize.c b/src/netlink_delinearize.c
-index 31d6242..396fb4e 100644
+index 31d6242..2593603 100644
 --- a/src/netlink_delinearize.c
 +++ b/src/netlink_delinearize.c
-@@ -882,6 +882,92 @@ static void netlink_parse_reject(struct netlink_parse_ctx *ctx,
+@@ -882,6 +882,116 @@ static void netlink_parse_reject(struct netlink_parse_ctx *ctx,
  	ctx->stmt = stmt;
  }
  
@@ -445,8 +501,10 @@ index 31d6242..396fb4e 100644
 +			       const struct nftnl_expr *nle)
 +{
 +	struct stmt *stmt;
-+	enum nft_registers sreg;
-+	struct expr *expr;
++	enum nft_registers sreg, set;
++	struct expr *expr, *set_expr;
++	const struct datatype *data_type = NULL;
++	enum datatypes type;
 +	uint32_t len;
 +
 +	sreg = netlink_parse_register(nle, NFTNL_EXPR_DICT_SREG);
@@ -463,12 +521,34 @@ index 31d6242..396fb4e 100644
 +			return;
 +	}
 +
-+	stmt = dict_stmt_alloc(loc);
++	if (nftnl_expr_is_set(nle, NFTNL_EXPR_DICT_TYPE)) {
++		type = nftnl_expr_get_u32(nle, NFTNL_EXPR_DICT_TYPE);
++		data_type = datatype_lookup(type);
++	}
++
++	stmt = dict_stmt_alloc(loc, data_type);
 +	stmt->dict.field = xstrdup(nftnl_expr_get_str(nle, NFTNL_EXPR_DICT_FIELD));
-+	stmt->dict.value = xstrdup(nftnl_expr_get_str(nle, NFTNL_EXPR_DICT_VALUE));
++	if (nftnl_expr_is_set(nle, NFTNL_EXPR_DICT_VALUE)) {
++		stmt->dict.value = xstrdup(nftnl_expr_get_str(nle, NFTNL_EXPR_DICT_VALUE));
++	}
 +	if (nftnl_expr_is_set(nle, NFTNL_EXPR_DICT_TABLE)) {
 +		stmt->dict.table = xstrdup(nftnl_expr_get_str(nle, NFTNL_EXPR_DICT_TABLE));
 +	}
++
++	if (nftnl_expr_is_set(nle, NFTNL_EXPR_DICT_SET)) {
++		if(stmt->dict.value == NULL) {
++			set = netlink_parse_register(nle, NFTNL_EXPR_DICT_SET);
++			set_expr = netlink_get_register(ctx, loc, set);
++			if (set_expr == NULL)
++				return netlink_error(ctx, loc,
++						     "dict statement has no set expression");
++			stmt->dict.set_expr = set_expr;
++		} else {
++			stmt->dict.set_flag = 1;
++		}
++	}
++
++	stmt->dict.data_type = data_type;
 +	stmt->dict.expr = expr;
 +	ctx->stmt = stmt;
 +}
@@ -486,7 +566,7 @@ index 31d6242..396fb4e 100644
  static void netlink_parse_nat(struct netlink_parse_ctx *ctx,
  			      const struct location *loc,
  			      const struct nftnl_expr *nle)
-@@ -1361,6 +1447,7 @@ static const struct {
+@@ -1361,6 +1471,7 @@ static const struct {
  	{ .name = "limit",	.parse = netlink_parse_limit },
  	{ .name = "range",	.parse = netlink_parse_range },
  	{ .name = "reject",	.parse = netlink_parse_reject },
@@ -494,7 +574,7 @@ index 31d6242..396fb4e 100644
  	{ .name = "nat",	.parse = netlink_parse_nat },
  	{ .name = "notrack",	.parse = netlink_parse_notrack },
  	{ .name = "masq",	.parse = netlink_parse_masq },
-@@ -2044,6 +2131,9 @@ static void expr_postprocess(struct rule_pp_ctx *ctx, struct expr **exprp)
+@@ -2044,6 +2155,9 @@ static void expr_postprocess(struct rule_pp_ctx *ctx, struct expr **exprp)
  		if (expr->hash.expr)
  			expr_postprocess(ctx, &expr->hash.expr);
  		break;
@@ -504,7 +584,7 @@ index 31d6242..396fb4e 100644
  	case EXPR_CT:
  		ct_expr_update_type(&ctx->pctx, expr);
  		break;
-@@ -2455,6 +2545,10 @@ static void rule_parse_postprocess(struct netlink_parse_ctx *ctx, struct rule *r
+@@ -2455,6 +2569,10 @@ static void rule_parse_postprocess(struct netlink_parse_ctx *ctx, struct rule *r
  		case STMT_OBJREF:
  			expr_postprocess(&rctx, &stmt->objref.expr);
  			break;
@@ -516,7 +596,7 @@ index 31d6242..396fb4e 100644
  			break;
  		}
 diff --git a/src/netlink_linearize.c b/src/netlink_linearize.c
-index 8471e83..3d0564e 100644
+index 8471e83..aac914f 100644
 --- a/src/netlink_linearize.c
 +++ b/src/netlink_linearize.c
 @@ -146,6 +146,34 @@ static void netlink_gen_hash(struct netlink_linearize_ctx *ctx,
@@ -563,19 +643,18 @@ index 8471e83..3d0564e 100644
  	default:
  		BUG("unknown expression type %s\n", expr->ops->name);
  	}
-@@ -1197,6 +1227,27 @@ static void netlink_gen_flow_offload_stmt(struct netlink_linearize_ctx *ctx,
+@@ -1197,6 +1227,43 @@ static void netlink_gen_flow_offload_stmt(struct netlink_linearize_ctx *ctx,
  	nftnl_rule_add_expr(ctx->nlr, nle);
  }
  
 +static void netlink_gen_dict_stmt(struct netlink_linearize_ctx *ctx,
 +				  const struct stmt *stmt)
 +{
-+	enum nft_registers sreg;
++	enum nft_registers sreg, set;
 +	struct nftnl_expr *nle;
 +
 +	sreg = get_register(ctx, stmt->dict.expr);
 +	netlink_gen_expr(ctx, stmt->dict.expr, sreg);
-+	release_register(ctx, stmt->dict.expr);
 +
 +	nle = alloc_nft_expr("dict");
 +	netlink_put_register(nle, NFTNL_EXPR_DICT_SREG, sreg);
@@ -584,14 +663,31 @@ index 8471e83..3d0564e 100644
 +	nftnl_expr_set_u32(nle, NFTNL_EXPR_DICT_LEN,
 +			   div_round_up(stmt->dict.expr->len, BITS_PER_BYTE));
 +	nftnl_expr_set_str(nle, NFTNL_EXPR_DICT_FIELD, stmt->dict.field);
-+	nftnl_expr_set_str(nle, NFTNL_EXPR_DICT_VALUE, stmt->dict.value);
++	if(stmt->dict.value)
++		nftnl_expr_set_str(nle, NFTNL_EXPR_DICT_VALUE, stmt->dict.value);
++
++	if(stmt->dict.data_type) {
++		nftnl_expr_set_u32(nle, NFTNL_EXPR_DICT_SIZE, stmt->dict.data_type->size / BITS_PER_BYTE);
++		nftnl_expr_set_u32(nle, NFTNL_EXPR_DICT_TYPE, stmt->dict.data_type->type);
++	}
++
++	if(stmt->dict.set_flag) {
++		nftnl_expr_set_u32(nle, NFTNL_EXPR_DICT_SET, 1);
++	} else if(stmt->dict.set_expr) {
++		set = get_register(ctx, stmt->dict.set_expr);
++		netlink_gen_expr(ctx, stmt->dict.set_expr, set);
++		release_register(ctx, stmt->dict.set_expr);
++		netlink_put_register(nle, NFTNL_EXPR_DICT_SET, set);
++	}
++	release_register(ctx, stmt->dict.expr);
++
 +	nftnl_rule_add_expr(ctx->nlr, nle);
 +}
 +
  static void netlink_gen_set_stmt(struct netlink_linearize_ctx *ctx,
  				 const struct stmt *stmt)
  {
-@@ -1326,6 +1377,8 @@ static void netlink_gen_stmt(struct netlink_linearize_ctx *ctx,
+@@ -1326,6 +1393,8 @@ static void netlink_gen_stmt(struct netlink_linearize_ctx *ctx,
  		return netlink_gen_objref_stmt(ctx, stmt);
  	case STMT_MAP:
  		return netlink_gen_map_stmt(ctx, stmt);
@@ -601,7 +697,7 @@ index 8471e83..3d0564e 100644
  		BUG("unknown statement type %s\n", stmt->ops->name);
  	}
 diff --git a/src/parser_bison.y b/src/parser_bison.y
-index bbc4330..2f1c640 100644
+index bbc4330..3fc3770 100644
 --- a/src/parser_bison.y
 +++ b/src/parser_bison.y
 @@ -159,6 +159,7 @@ int nft_lex(void *, void *, void *);
@@ -682,40 +778,109 @@ index bbc4330..2f1c640 100644
  			;
  
  verdict_stmt		:	verdict_expr
-@@ -2847,6 +2859,32 @@ match_stmt		:	relational_expr
+@@ -2847,6 +2859,101 @@ match_stmt		:	relational_expr
  			}
  			;
  
 +dict_stmt		:	DICT	glob_string	expr	glob_string	LONG_STRING	glob_string
 +			{
-+				$$ = dict_stmt_alloc(&@$);
++				$$ = dict_stmt_alloc(&@$, NULL);
 +				$$->dict.table = $2;
 +				$$->dict.expr = $3;
 +				$$->dict.field = $4;
 +				$$->dict.value = $6;
++				$$->dict.set_expr = NULL;
++				$$->dict.set_flag = 0;
 +			}
 +			|	DICT	DEVICE		expr	glob_string	LONG_STRING	glob_string
 +			{
-+				$$ = dict_stmt_alloc(&@$);
++				$$ = dict_stmt_alloc(&@$, NULL);
 +				$$->dict.table = xstrdup("device");
 +				$$->dict.expr = $3;
 +				$$->dict.field = $4;
 +				$$->dict.value = $6;
++				$$->dict.set_expr = NULL;
++				$$->dict.set_flag = 0;
 +			}
 +			|	DICT	expr	glob_string	LONG_STRING	glob_string
 +			{
-+				$$ = dict_stmt_alloc(&@$);
++				$$ = dict_stmt_alloc(&@$, NULL);
 +				$$->dict.table = NULL;
 +				$$->dict.expr = $2;
 +				$$->dict.field = $3;
 +				$$->dict.value = $5;
++				$$->dict.set_expr = NULL;
++				$$->dict.set_flag = 0;
++			}
++			|	DICT	glob_string	expr	glob_string	data_type_expr	SET	stmt_expr
++			{
++				$$ = dict_stmt_alloc(&@$, $5->dtype);
++				$$->dict.table = $2;
++				$$->dict.expr = $3;
++				$$->dict.field = $4;
++				$$->dict.value = NULL;
++				$$->dict.set_expr = $7;
++				$$->dict.set_flag = 0;
++				expr_free($5);
++			}
++			|	DICT	glob_string	expr	glob_string	LONG_STRING	SET	glob_string
++			{
++				$$ = dict_stmt_alloc(&@$, NULL);
++				$$->dict.table = $2;
++				$$->dict.expr = $3;
++				$$->dict.field = $4;
++				$$->dict.value = $7;
++				$$->dict.set_expr = NULL;
++				$$->dict.set_flag = 1;
++			}
++			|	DICT	DEVICE		expr	glob_string	data_type_expr	SET	stmt_expr
++			{
++				$$ = dict_stmt_alloc(&@$, $5->dtype);
++				$$->dict.table = xstrdup("device");
++				$$->dict.expr = $3;
++				$$->dict.field = $4;
++				$$->dict.value = NULL;
++				$$->dict.set_expr = $7;
++				$$->dict.set_flag = 0;
++				expr_free($5);
++			}
++			|	DICT	DEVICE		expr	glob_string	LONG_STRING	SET	glob_string
++			{
++				$$ = dict_stmt_alloc(&@$, NULL);
++				$$->dict.table = xstrdup("device");
++				$$->dict.expr = $3;
++				$$->dict.field = $4;
++				$$->dict.value = $7;
++				$$->dict.set_expr = NULL;
++				$$->dict.set_flag = 1;
++			}
++			|	DICT	expr	glob_string	data_type_expr	SET	stmt_expr
++			{
++				$$ = dict_stmt_alloc(&@$, $4->dtype);
++				$$->dict.table = NULL;
++				$$->dict.expr = $2;
++				$$->dict.field = $3;
++				$$->dict.value = NULL;
++				$$->dict.set_expr = $6;
++				$$->dict.set_flag = 0;
++				expr_free($4);
++			}
++			|	DICT	expr	glob_string	LONG_STRING	SET	glob_string
++			{
++				$$ = dict_stmt_alloc(&@$, NULL);
++				$$->dict.table = NULL;
++				$$->dict.expr = $2;
++				$$->dict.field = $3;
++				$$->dict.value = $6;
++				$$->dict.set_expr = NULL;
++				$$->dict.set_flag = 1;
 +			}
 +			;
 +
  variable_expr		:	'$'	identifier
  			{
  				struct scope *scope = current_scope(state);
-@@ -2903,6 +2941,7 @@ primary_expr		:	symbol_expr			{ $$ = $1; }
+@@ -2903,6 +3010,7 @@ primary_expr		:	symbol_expr			{ $$ = $1; }
  			|	rt_expr				{ $$ = $1; }
  			|	ct_expr				{ $$ = $1; }
  			|	numgen_expr			{ $$ = $1; }
@@ -723,7 +888,7 @@ index bbc4330..2f1c640 100644
  			|	hash_expr			{ $$ = $1; }
  			|	fib_expr			{ $$ = $1; }
  			|	'('	basic_expr	')'	{ $$ = $2; }
-@@ -3589,6 +3628,59 @@ numgen_expr		:	NUMGEN	numgen_type	MOD	NUM	offset_opt
+@@ -3589,6 +3697,59 @@ numgen_expr		:	NUMGEN	numgen_type	MOD	NUM	offset_opt
  			}
  			;
  
@@ -738,7 +903,7 @@ index bbc4330..2f1c640 100644
 +			}
 +			|	DICT	glob_string	expr	glob_string	LONG_STRING
 +			{
-+				$$ = dict_expr_alloc(&@$, &key_type);
++				$$ = dict_expr_alloc(&@$, &int_type);
 +				$$->dict.table = $2;
 +				$$->dict.expr = $3;
 +				$$->dict.field = $4;
@@ -755,7 +920,7 @@ index bbc4330..2f1c640 100644
 +			}
 +			|	DICT	DEVICE		expr	glob_string	LONG_STRING
 +			{
-+				$$ = dict_expr_alloc(&@$, &key_type);
++				$$ = dict_expr_alloc(&@$, &int_type);
 +				$$->dict.table = xstrdup("device");
 +				$$->dict.expr = $3;
 +				$$->dict.field = $4;
@@ -772,7 +937,7 @@ index bbc4330..2f1c640 100644
 +			}
 +			|	DICT	expr	glob_string	LONG_STRING
 +			{
-+				$$ = dict_expr_alloc(&@$, &key_type);
++				$$ = dict_expr_alloc(&@$, &int_type);
 +				$$->dict.table = NULL;
 +				$$->dict.expr = $2;
 +				$$->dict.field = $3;
