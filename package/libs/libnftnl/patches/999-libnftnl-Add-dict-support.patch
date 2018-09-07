@@ -517,17 +517,17 @@ index cbb2a1b..fefcd03 100644
 --- a/src/expr_ops.c
 +++ b/src/expr_ops.c
 @@ -36,6 +36,7 @@ extern struct expr_ops expr_ops_hash;
+ extern struct expr_ops expr_ops_hash;
  extern struct expr_ops expr_ops_fib;
  extern struct expr_ops expr_ops_flow;
- extern struct expr_ops expr_ops_socket;
 +extern struct expr_ops expr_ops_dict;
  
  static struct expr_ops expr_ops_notrack = {
  	.name	= "notrack",
 @@ -75,6 +76,7 @@ static struct expr_ops *expr_ops[] = {
+ 	&expr_ops_fib,
  	&expr_ops_objref,
  	&expr_ops_flow,
- 	&expr_ops_socket,
 +	&expr_ops_dict,
  	NULL,
  };
