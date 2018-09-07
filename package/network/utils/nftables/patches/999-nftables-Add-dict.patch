@@ -26,9 +26,9 @@ index 6f5a2d1..9f91641 100644
 --- a/include/Makefile.am
 +++ b/include/Makefile.am
 @@ -7,6 +7,7 @@ noinst_HEADERS = 	cli.h		\
+ 			expression.h	\
  			fib.h		\
  			hash.h		\
- 			json.h		\
 +			dict.h		\
  			mini-gmp.h	\
  			gmputil.h	\
@@ -135,25 +135,25 @@ index 5a907aa..19e29e0 100644
   * enum stmt_types - statement types
   *
 @@ -258,6 +270,7 @@ extern struct stmt *xt_stmt_alloc(const struct location *loc);
+  * @STMT_OBJREF:	stateful object reference statement
+  * @STMT_EXTHDR:	extension header statement
   * @STMT_FLOW_OFFLOAD:	flow offload statement
-  * @STMT_CONNLIMIT:	connection limit statement
-  * @STMT_MAP:		map statement
 + * @STMT_DICT:		dict statement
   */
  enum stmt_types {
  	STMT_INVALID,
 @@ -284,6 +297,7 @@ enum stmt_types {
- 	STMT_FLOW_OFFLOAD,
- 	STMT_CONNLIMIT,
- 	STMT_MAP,
+	STMT_OBJREF,
+	STMT_EXTHDR,
+	STMT_FLOW_OFFLOAD,
 +	STMT_DICT,
  };
  
  /**
 @@ -347,6 +361,7 @@ struct stmt {
- 		struct objref_stmt	objref;
- 		struct flow_stmt	flow;
- 		struct map_stmt		map;
+		struct xt_stmt		xt;
+		struct objref_stmt	objref;
+		struct flow_stmt	flow;
 +		struct dict_stmt	dict;
  	};
  };
@@ -437,9 +437,9 @@ index c4ee3cc..820de0f 100644
  					     struct stmt *stmt,
  					     struct expr **payload)
 @@ -2772,6 +2806,8 @@ int stmt_evaluate(struct eval_ctx *ctx, struct stmt *stmt)
- 		return stmt_evaluate_objref(ctx, stmt);
- 	case STMT_MAP:
- 		return stmt_evaluate_map(ctx, stmt);
+		return stmt_evaluate_set(ctx, stmt);
+	case STMT_OBJREF:
+		return stmt_evaluate_objref(ctx, stmt);
 +	case STMT_DICT:
 +		return stmt_evaluate_dict(ctx, stmt);
  	default:
@@ -635,9 +635,9 @@ index 8471e83..aac914f 100644
  				const struct expr *expr,
  				enum nft_registers dreg)
 @@ -708,6 +736,8 @@ static void netlink_gen_expr(struct netlink_linearize_ctx *ctx,
- 		return netlink_gen_fib(ctx, expr, dreg);
- 	case EXPR_SOCKET:
- 		return netlink_gen_socket(ctx, expr, dreg);
+		return netlink_gen_hash(ctx, expr, dreg);
+	case EXPR_FIB:
+		return netlink_gen_fib(ctx, expr, dreg);
 +	case EXPR_DICT:
 +		return netlink_gen_dict(ctx, expr, dreg);
  	default:
@@ -688,9 +688,9 @@ index 8471e83..aac914f 100644
  				 const struct stmt *stmt)
  {
 @@ -1326,6 +1393,8 @@ static void netlink_gen_stmt(struct netlink_linearize_ctx *ctx,
- 		return netlink_gen_objref_stmt(ctx, stmt);
- 	case STMT_MAP:
- 		return netlink_gen_map_stmt(ctx, stmt);
+		return netlink_gen_notrack_stmt(ctx, stmt);
+	case STMT_OBJREF:
+		return netlink_gen_objref_stmt(ctx, stmt);
 +	case STMT_DICT:
 +		return netlink_gen_dict_stmt(ctx, stmt);
  	default:
@@ -771,9 +771,9 @@ index bbc4330..3fc3770 100644
  			{
  				struct error_record *erec;
 @@ -2088,6 +2099,7 @@ stmt			:	verdict_stmt
+ 			|	dup_stmt
  			|	fwd_stmt
  			|	set_stmt
- 			|	map_stmt
 +			|	dict_stmt
  			;
  

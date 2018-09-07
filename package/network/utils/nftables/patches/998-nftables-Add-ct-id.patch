@@ -16,9 +16,9 @@ index b641f0e..63d722c 100644
 --- a/include/datatype.h
 +++ b/include/datatype.h
 @@ -88,6 +88,7 @@ enum datatypes {
+ 	TYPE_FIB_ADDR,
  	TYPE_BOOLEAN,
  	TYPE_CT_EVENTBIT,
- 	TYPE_IFNAME,
 +	TYPE_INT32,
  	__TYPE_MAX
  };
@@ -40,9 +40,9 @@ index 88e0ca1..050b8b2 100644
  	NFT_CT_ZONE,
  	NFT_CT_EVENTMASK,
 +	NFT_CT_ID,
- 	NFT_CT_SRC_IP,
- 	NFT_CT_DST_IP,
- 	NFT_CT_SRC_IP6,
+ };
+ 
+ /**
 diff --git a/src/ct.c b/src/ct.c
 index 1d50382..75c3e85 100644
 --- a/src/ct.c
@@ -61,9 +61,9 @@ index c77d228..999ccff 100644
 --- a/src/datatype.c
 +++ b/src/datatype.c
 @@ -70,6 +70,7 @@ static const struct datatype *datatypes[TYPE_MAX + 1] = {
+	[TYPE_ECN]		= &ecn_type,
  	[TYPE_FIB_ADDR]         = &fib_addr_type,
  	[TYPE_BOOLEAN]		= &boolean_type,
- 	[TYPE_IFNAME]		= &ifname_type,
 +	[TYPE_INT32]		= &int_type,
  };
  
