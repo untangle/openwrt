@@ -1,0 +1,207 @@
+From 34cc0540f2e098de09d29765d6e0ca1bf4dd37e5 Mon Sep 17 00:00:00 2001
+From: "Gustavo A. R. Silva" <garsilva@embeddedor.com>
+Date: Mon, 16 Oct 2017 16:36:52 -0500
+Subject: [PATCH 20/34] ipv6: mark expected switch fall-throughs
+
+In preparation to enabling -Wimplicit-fallthrough, mark switch cases
+where we are expecting to fall through.
+
+Notice that in some cases I placed the "fall through" comment
+on its own line, which is what GCC is expecting to find.
+
+Signed-off-by: Gustavo A. R. Silva <garsilva@embeddedor.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/ipv6/ah6.c                           | 1 +
+ net/ipv6/exthdrs.c                       | 1 +
+ net/ipv6/icmp.c                          | 6 ++----
+ net/ipv6/ip6_fib.c                       | 4 ++++
+ net/ipv6/ip6_tunnel.c                    | 1 +
+ net/ipv6/ip6mr.c                         | 1 +
+ net/ipv6/netfilter/nf_nat_l3proto_ipv6.c | 3 ++-
+ net/ipv6/raw.c                           | 4 ++++
+ net/ipv6/tcp_ipv6.c                      | 3 ++-
+ net/ipv6/xfrm6_policy.c                  | 1 +
+ 10 files changed, 19 insertions(+), 6 deletions(-)
+
+diff --git a/net/ipv6/ah6.c b/net/ipv6/ah6.c
+index 7802b72196f3..37bb33fbc742 100644
+--- a/net/ipv6/ah6.c
++++ b/net/ipv6/ah6.c
+@@ -271,6 +271,7 @@ static int ipv6_clear_mutable_options(struct ipv6hdr *iph, int len, int dir)
+ 		case NEXTHDR_DEST:
+ 			if (dir == XFRM_POLICY_OUT)
+ 				ipv6_rearrange_destopt(iph, exthdr.opth);
++			/* fall through */
+ 		case NEXTHDR_HOP:
+ 			if (!zero_out_mutable_opts(exthdr.opth)) {
+ 				net_dbg_ratelimited("overrun %sopts\n",
+diff --git a/net/ipv6/exthdrs.c b/net/ipv6/exthdrs.c
+index d6189c2a35e4..4a4049bc274b 100644
+--- a/net/ipv6/exthdrs.c
++++ b/net/ipv6/exthdrs.c
+@@ -89,6 +89,7 @@ static bool ip6_tlvopt_unknown(struct sk_buff *skb, int optoff)
+ 		 */
+ 		if (ipv6_addr_is_multicast(&ipv6_hdr(skb)->daddr))
+ 			break;
++		/* fall through */
+ 	case 2: /* send ICMP PARM PROB regardless and drop packet */
+ 		icmpv6_param_prob(skb, ICMPV6_UNK_OPTION, optoff);
+ 		return false;
+diff --git a/net/ipv6/icmp.c b/net/ipv6/icmp.c
+index 5acb54405b10..059e35c3f371 100644
+--- a/net/ipv6/icmp.c
++++ b/net/ipv6/icmp.c
+@@ -872,10 +872,8 @@ static int icmpv6_rcv(struct sk_buff *skb)
+ 			goto discard_it;
+ 		hdr = icmp6_hdr(skb);
+ 
+-		/*
+-		 *	Drop through to notify
+-		 */
+-
++		/* to notify */
++		/* fall through */
+ 	case ICMPV6_DEST_UNREACH:
+ 	case ICMPV6_TIME_EXCEED:
+ 	case ICMPV6_PARAMPROB:
+diff --git a/net/ipv6/ip6_fib.c b/net/ipv6/ip6_fib.c
+index c2ecd5ec638a..dcb06499c633 100644
+--- a/net/ipv6/ip6_fib.c
++++ b/net/ipv6/ip6_fib.c
+@@ -1777,6 +1777,7 @@ static int fib6_walk_continue(struct fib6_walker *w)
+ 			}
+ 			w->state = FWS_L;
+ #endif
++			/* fall through */
+ 		case FWS_L:
+ 			left = rcu_dereference_protected(fn->left, 1);
+ 			if (left) {
+@@ -1785,6 +1786,7 @@ static int fib6_walk_continue(struct fib6_walker *w)
+ 				continue;
+ 			}
+ 			w->state = FWS_R;
++			/* fall through */
+ 		case FWS_R:
+ 			right = rcu_dereference_protected(fn->right, 1);
+ 			if (right) {
+@@ -1794,6 +1796,7 @@ static int fib6_walk_continue(struct fib6_walker *w)
+ 			}
+ 			w->state = FWS_C;
+ 			w->leaf = rcu_dereference_protected(fn->leaf, 1);
++			/* fall through */
+ 		case FWS_C:
+ 			if (w->leaf && fn->fn_flags & RTN_RTINFO) {
+ 				int err;
+@@ -1812,6 +1815,7 @@ static int fib6_walk_continue(struct fib6_walker *w)
+ 			}
+ skip:
+ 			w->state = FWS_U;
++			/* fall through */
+ 		case FWS_U:
+ 			if (fn == w->root)
+ 				return 0;
+diff --git a/net/ipv6/ip6_tunnel.c b/net/ipv6/ip6_tunnel.c
+index 137c0d9a7ce4..80a5e6ff876d 100644
+--- a/net/ipv6/ip6_tunnel.c
++++ b/net/ipv6/ip6_tunnel.c
+@@ -613,6 +613,7 @@ ip4ip6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
+ 	case NDISC_REDIRECT:
+ 		rel_type = ICMP_REDIRECT;
+ 		rel_code = ICMP_REDIR_HOST;
++		/* fall through */
+ 	default:
+ 		return 0;
+ 	}
+diff --git a/net/ipv6/ip6mr.c b/net/ipv6/ip6mr.c
+index 9d3239f70c02..84554035cf73 100644
+--- a/net/ipv6/ip6mr.c
++++ b/net/ipv6/ip6mr.c
+@@ -1725,6 +1725,7 @@ int ip6_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, uns
+ 	case MRT6_ADD_MFC:
+ 	case MRT6_DEL_MFC:
+ 		parent = -1;
++		/* fall through */
+ 	case MRT6_ADD_MFC_PROXY:
+ 	case MRT6_DEL_MFC_PROXY:
+ 		if (optlen < sizeof(mfc))
+diff --git a/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c b/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c
+index 283eb6e483d3..6b7f075f811f 100644
+--- a/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c
++++ b/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c
+@@ -294,7 +294,8 @@ nf_nat_ipv6_fn(void *priv, struct sk_buff *skb,
+ 			else
+ 				return NF_ACCEPT;
+ 		}
+-		/* Fall thru... (Only ICMPs can be IP_CT_IS_REPLY) */
++		/* Only ICMPs can be IP_CT_IS_REPLY: */
++		/* fall through */
+ 	case IP_CT_NEW:
+ 		/* Seen it before?  This can happen for loopback, retrans,
+ 		 * or local packets.
+diff --git a/net/ipv6/raw.c b/net/ipv6/raw.c
+index e4462b0ff801..761a473a07c5 100644
+--- a/net/ipv6/raw.c
++++ b/net/ipv6/raw.c
+@@ -1055,6 +1055,7 @@ static int rawv6_setsockopt(struct sock *sk, int level, int optname,
+ 		if (optname == IPV6_CHECKSUM ||
+ 		    optname == IPV6_HDRINCL)
+ 			break;
++		/* fall through */
+ 	default:
+ 		return ipv6_setsockopt(sk, level, optname, optval, optlen);
+ 	}
+@@ -1077,6 +1078,7 @@ static int compat_rawv6_setsockopt(struct sock *sk, int level, int optname,
+ 		if (optname == IPV6_CHECKSUM ||
+ 		    optname == IPV6_HDRINCL)
+ 			break;
++		/* fall through */
+ 	default:
+ 		return compat_ipv6_setsockopt(sk, level, optname,
+ 					      optval, optlen);
+@@ -1138,6 +1140,7 @@ static int rawv6_getsockopt(struct sock *sk, int level, int optname,
+ 		if (optname == IPV6_CHECKSUM ||
+ 		    optname == IPV6_HDRINCL)
+ 			break;
++		/* fall through */
+ 	default:
+ 		return ipv6_getsockopt(sk, level, optname, optval, optlen);
+ 	}
+@@ -1160,6 +1163,7 @@ static int compat_rawv6_getsockopt(struct sock *sk, int level, int optname,
+ 		if (optname == IPV6_CHECKSUM ||
+ 		    optname == IPV6_HDRINCL)
+ 			break;
++		/* fall through */
+ 	default:
+ 		return compat_ipv6_getsockopt(sk, level, optname,
+ 					      optval, optlen);
+diff --git a/net/ipv6/tcp_ipv6.c b/net/ipv6/tcp_ipv6.c
+index 237cc6187c5a..7e0199dc14cc 100644
+--- a/net/ipv6/tcp_ipv6.c
++++ b/net/ipv6/tcp_ipv6.c
+@@ -1579,8 +1579,9 @@ static int tcp_v6_rcv(struct sk_buff *skb)
+ 			refcounted = false;
+ 			goto process;
+ 		}
+-		/* Fall through to ACK */
+ 	}
++		/* to ACK */
++		/* fall through */
+ 	case TCP_TW_ACK:
+ 		tcp_v6_timewait_ack(sk, skb);
+ 		break;
+diff --git a/net/ipv6/xfrm6_policy.c b/net/ipv6/xfrm6_policy.c
+index 17e95a0386b3..885ade234a49 100644
+--- a/net/ipv6/xfrm6_policy.c
++++ b/net/ipv6/xfrm6_policy.c
+@@ -153,6 +153,7 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
+ 		switch (nexthdr) {
+ 		case NEXTHDR_FRAGMENT:
+ 			onlyproto = 1;
++			/* fall through */
+ 		case NEXTHDR_ROUTING:
+ 		case NEXTHDR_HOP:
+ 		case NEXTHDR_DEST:
+-- 
+2.11.0
+

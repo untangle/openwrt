@@ -1,0 +1,133 @@
+From a4fba752c31b816cdef6483bc935edf4775fa24e Mon Sep 17 00:00:00 2001
+From: "Gustavo A. R. Silva" <garsilva@embeddedor.com>
+Date: Mon, 16 Oct 2017 15:48:55 -0500
+Subject: [PATCH 21/34] ipv4: mark expected switch fall-throughs
+
+In preparation to enabling -Wimplicit-fallthrough, mark switch cases
+where we are expecting to fall through.
+
+Notice that in some cases I placed the "fall through" comment
+on its own line, which is what GCC is expecting to find.
+
+Addresses-Coverity-ID: 115108
+Signed-off-by: Gustavo A. R. Silva <garsilva@embeddedor.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/ipv4/af_inet.c                       | 3 ++-
+ net/ipv4/arp.c                           | 1 +
+ net/ipv4/devinet.c                       | 1 +
+ net/ipv4/ipmr.c                          | 1 +
+ net/ipv4/netfilter/nf_nat_l3proto_ipv4.c | 3 ++-
+ net/ipv4/tcp_input.c                     | 2 ++
+ net/ipv4/tcp_ipv4.c                      | 3 ++-
+ 7 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
+index b9d9a2b8792c..4439042cf9db 100644
+--- a/net/ipv4/af_inet.c
++++ b/net/ipv4/af_inet.c
+@@ -826,6 +826,7 @@ int inet_shutdown(struct socket *sock, int how)
+ 		err = -ENOTCONN;
+ 		/* Hack to wake up other listeners, who can poll for
+ 		   POLLHUP, even on eg. unconnected UDP sockets -- RR */
++		/* fall through */
+ 	default:
+ 		sk->sk_shutdown |= how;
+ 		if (sk->sk_prot->shutdown)
+@@ -839,7 +840,7 @@ int inet_shutdown(struct socket *sock, int how)
+ 	case TCP_LISTEN:
+ 		if (!(how & RCV_SHUTDOWN))
+ 			break;
+-		/* Fall through */
++		/* fall through */
+ 	case TCP_SYN_SENT:
+ 		err = sk->sk_prot->disconnect(sk, O_NONBLOCK);
+ 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
+diff --git a/net/ipv4/arp.c b/net/ipv4/arp.c
+index 7d9cf26f4bb1..e981e05594c5 100644
+--- a/net/ipv4/arp.c
++++ b/net/ipv4/arp.c
+@@ -1185,6 +1185,7 @@ int arp_ioctl(struct net *net, unsigned int cmd, void __user *arg)
+ 	case SIOCSARP:
+ 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+ 			return -EPERM;
++		/* fall through */
+ 	case SIOCGARP:
+ 		err = copy_from_user(&r, arg, sizeof(struct arpreq));
+ 		if (err)
+diff --git a/net/ipv4/devinet.c b/net/ipv4/devinet.c
+index bffa88ecc534..69557ca171d8 100644
+--- a/net/ipv4/devinet.c
++++ b/net/ipv4/devinet.c
+@@ -1516,6 +1516,7 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
+ 		if (inetdev_valid_mtu(dev->mtu))
+ 			break;
+ 		/* disable IP when MTU is not enough */
++		/* fall through */
+ 	case NETDEV_UNREGISTER:
+ 		inetdev_destroy(in_dev);
+ 		break;
+diff --git a/net/ipv4/ipmr.c b/net/ipv4/ipmr.c
+index 6e280889e314..c1a045bbb772 100644
+--- a/net/ipv4/ipmr.c
++++ b/net/ipv4/ipmr.c
+@@ -1399,6 +1399,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval,
+ 	case MRT_ADD_MFC:
+ 	case MRT_DEL_MFC:
+ 		parent = -1;
++		/* fall through */
+ 	case MRT_ADD_MFC_PROXY:
+ 	case MRT_DEL_MFC_PROXY:
+ 		if (optlen != sizeof(mfc)) {
+diff --git a/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c b/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c
+index 7c46a4ec6b13..f7ff6a364d7b 100644
+--- a/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c
++++ b/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c
+@@ -276,7 +276,8 @@ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
+ 			else
+ 				return NF_ACCEPT;
+ 		}
+-		/* Fall thru... (Only ICMPs can be IP_CT_IS_REPLY) */
++		/* Only ICMPs can be IP_CT_IS_REPLY: */
++		/* fall through */
+ 	case IP_CT_NEW:
+ 		/* Seen it before?  This can happen for loopback, retrans,
+ 		 * or local packets.
+diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
+index 125b49c166a4..5d909850d267 100644
+--- a/net/ipv4/tcp_input.c
++++ b/net/ipv4/tcp_input.c
+@@ -2874,6 +2874,7 @@ static void tcp_fastretrans_alert(struct sock *sk, const int acked,
+ 		      (*ack_flag & FLAG_LOST_RETRANS)))
+ 			return;
+ 		/* Change state if cwnd is undone or retransmits are lost */
++		/* fall through */
+ 	default:
+ 		if (tcp_is_reno(tp)) {
+ 			if (flag & FLAG_SND_UNA_ADVANCED)
+@@ -6075,6 +6076,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
+ 	case TCP_LAST_ACK:
+ 		if (!before(TCP_SKB_CB(skb)->seq, tp->rcv_nxt))
+ 			break;
++		/* fall through */
+ 	case TCP_FIN_WAIT1:
+ 	case TCP_FIN_WAIT2:
+ 		/* RFC 793 says to queue data in these states,
+diff --git a/net/ipv4/tcp_ipv4.c b/net/ipv4/tcp_ipv4.c
+index cab4b935e474..462937e04a2a 100644
+--- a/net/ipv4/tcp_ipv4.c
++++ b/net/ipv4/tcp_ipv4.c
+@@ -1804,8 +1804,9 @@ int tcp_v4_rcv(struct sk_buff *skb)
+ 			refcounted = false;
+ 			goto process;
+ 		}
+-		/* Fall through to ACK */
+ 	}
++		/* to ACK */
++		/* fall through */
+ 	case TCP_TW_ACK:
+ 		tcp_v4_timewait_ack(sk, skb);
+ 		break;
+-- 
+2.11.0
+
