@@ -1,0 +1,27 @@
+From 3f07403f4e1fbca605e81f34bee2f7ff38bb0573 Mon Sep 17 00:00:00 2001
+From: Brett Mastbergen <bmastbergen@untangle.com>
+Date: Fri, 14 Sep 2018 10:54:40 -0400
+Subject: [PATCH 15/34] Revert "net/ipv6: Fix route leaking between VRFs"
+
+This reverts commit d1b820bd98a18ace891099465005d937e7ef992d.
+---
+ net/ipv6/route.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index e3d6fae5a4fa..9aa0bb2993ed 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -933,9 +933,6 @@ static struct rt6_info *ip6_pol_route_lookup(struct net *net,
+ 	struct rt6_info *rt, *rt_cache;
+ 	struct fib6_node *fn;
+ 
+-	if (fl6->flowi6_flags & FLOWI_FLAG_SKIP_NH_OIF)
+-		flags &= ~RT6_LOOKUP_F_IFACE;
+-
+ 	read_lock_bh(&table->tb6_lock);
+ 	fn = fib6_lookup(&table->tb6_root, &fl6->daddr, &fl6->saddr);
+ restart:
+-- 
+2.11.0
+
