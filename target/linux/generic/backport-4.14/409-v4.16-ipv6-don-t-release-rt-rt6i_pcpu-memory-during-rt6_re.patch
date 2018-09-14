@@ -1,0 +1,39 @@
+From fb8396468112b981533d155965e07a006a999a31 Mon Sep 17 00:00:00 2001
+From: Wei Wang <weiwan@google.com>
+Date: Fri, 6 Oct 2017 12:06:05 -0700
+Subject: [PATCH 10/34] ipv6: don't release rt->rt6i_pcpu memory during
+ rt6_release()
+
+After rwlock is replaced with rcu and spinlock, route lookup can happen
+simultanously with route deletion.
+This patch removes the call to free_percpu(rt->rt6i_pcpu) from
+rt6_release() to avoid the race condition between rt6_release() and
+rt6_get_pcpu_route(). And as free_percpu(rt->rt6i_pcpu) is already
+called in ip6_dst_destroy() after the rcu grace period, it is safe to do
+this change.
+
+Signed-off-by: Wei Wang <weiwan@google.com>
+Signed-off-by: Martin KaFai Lau <kafai@fb.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/ipv6/ip6_fib.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/net/ipv6/ip6_fib.c b/net/ipv6/ip6_fib.c
+index 9c8e704e6af7..eee392f7b1f6 100644
+--- a/net/ipv6/ip6_fib.c
++++ b/net/ipv6/ip6_fib.c
+@@ -190,9 +190,6 @@ void rt6_free_pcpu(struct rt6_info *non_pcpu_rt)
+ 			*ppcpu_rt = NULL;
+ 		}
+ 	}
+-
+-	free_percpu(non_pcpu_rt->rt6i_pcpu);
+-	non_pcpu_rt->rt6i_pcpu = NULL;
+ }
+ EXPORT_SYMBOL_GPL(rt6_free_pcpu);
+ 
+-- 
+2.11.0
+

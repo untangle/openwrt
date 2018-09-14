@@ -1,0 +1,160 @@
+From ca350850ffdbe4f3af95ef206aafbed1f4a53558 Mon Sep 17 00:00:00 2001
+From: Wei Wang <weiwan@google.com>
+Date: Fri, 6 Oct 2017 12:06:02 -0700
+Subject: [PATCH 07/34] ipv6: prepare fib6_locate() for exception table
+
+fib6_locate() is used to find the fib6_node according to the passed in
+prefix address key. It currently tries to find the fib6_node with the
+exact match of the passed in key. However, when we move cached routes
+into the exception table, fib6_locate() will fail to find the fib6_node
+for it as the cached routes will be stored in the exception table under
+the fib6_node with the longest prefix match of the cache's dst addr key.
+This commit adds a new parameter to let the caller specify if it needs
+exact match or longest prefix match.
+Right now, all callers still does exact match when calling
+fib6_locate(). It will be changed in later commit where exception table
+is hooked up to store cached routes.
+
+Signed-off-by: Wei Wang <weiwan@google.com>
+Signed-off-by: Martin KaFai Lau <kafai@fb.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ include/net/ip6_fib.h |  3 ++-
+ net/ipv6/addrconf.c   |  2 +-
+ net/ipv6/ip6_fib.c    | 30 +++++++++++++++++++++++-------
+ net/ipv6/route.c      |  5 +++--
+ 4 files changed, 29 insertions(+), 11 deletions(-)
+
+diff --git a/include/net/ip6_fib.h b/include/net/ip6_fib.h
+index 11a79ef87a28..4497a1eb4d41 100644
+--- a/include/net/ip6_fib.h
++++ b/include/net/ip6_fib.h
+@@ -357,7 +357,8 @@ struct fib6_node *fib6_lookup(struct fib6_node *root,
+ 
+ struct fib6_node *fib6_locate(struct fib6_node *root,
+ 			      const struct in6_addr *daddr, int dst_len,
+-			      const struct in6_addr *saddr, int src_len);
++			      const struct in6_addr *saddr, int src_len,
++			      bool exact_match);
+ 
+ void fib6_clean_all(struct net *net, int (*func)(struct rt6_info *, void *arg),
+ 		    void *arg);
+diff --git a/net/ipv6/addrconf.c b/net/ipv6/addrconf.c
+index 6a76e41e6d51..dc2c151396ba 100644
+--- a/net/ipv6/addrconf.c
++++ b/net/ipv6/addrconf.c
+@@ -2323,7 +2323,7 @@ static struct rt6_info *addrconf_get_prefix_route(const struct in6_addr *pfx,
+ 		return NULL;
+ 
+ 	read_lock_bh(&table->tb6_lock);
+-	fn = fib6_locate(&table->tb6_root, pfx, plen, NULL, 0);
++	fn = fib6_locate(&table->tb6_root, pfx, plen, NULL, 0, true);
+ 	if (!fn)
+ 		goto out;
+ 
+diff --git a/net/ipv6/ip6_fib.c b/net/ipv6/ip6_fib.c
+index 3afbe50f2779..b3e4cf0962f8 100644
+--- a/net/ipv6/ip6_fib.c
++++ b/net/ipv6/ip6_fib.c
+@@ -1343,14 +1343,21 @@ struct fib6_node *fib6_lookup(struct fib6_node *root, const struct in6_addr *dad
+ /*
+  *	Get node with specified destination prefix (and source prefix,
+  *	if subtrees are used)
++ *	exact_match == true means we try to find fn with exact match of
++ *	the passed in prefix addr
++ *	exact_match == false means we try to find fn with longest prefix
++ *	match of the passed in prefix addr. This is useful for finding fn
++ *	for cached route as it will be stored in the exception table under
++ *	the node with longest prefix length.
+  */
+ 
+ 
+ static struct fib6_node *fib6_locate_1(struct fib6_node *root,
+ 				       const struct in6_addr *addr,
+-				       int plen, int offset)
++				       int plen, int offset,
++				       bool exact_match)
+ {
+-	struct fib6_node *fn;
++	struct fib6_node *fn, *prev = NULL;
+ 
+ 	for (fn = root; fn ; ) {
+ 		struct rt6key *key = (struct rt6key *)((u8 *)fn->leaf + offset);
+@@ -1360,11 +1367,13 @@ static struct fib6_node *fib6_locate_1(struct fib6_node *root,
+ 		 */
+ 		if (plen < fn->fn_bit ||
+ 		    !ipv6_prefix_equal(&key->addr, addr, fn->fn_bit))
+-			return NULL;
++			goto out;
+ 
+ 		if (plen == fn->fn_bit)
+ 			return fn;
+ 
++		prev = fn;
++
+ 		/*
+ 		 *	We have more bits to go
+ 		 */
+@@ -1373,24 +1382,31 @@ static struct fib6_node *fib6_locate_1(struct fib6_node *root,
+ 		else
+ 			fn = fn->left;
+ 	}
+-	return NULL;
++out:
++	if (exact_match)
++		return NULL;
++	else
++		return prev;
+ }
+ 
+ struct fib6_node *fib6_locate(struct fib6_node *root,
+ 			      const struct in6_addr *daddr, int dst_len,
+-			      const struct in6_addr *saddr, int src_len)
++			      const struct in6_addr *saddr, int src_len,
++			      bool exact_match)
+ {
+ 	struct fib6_node *fn;
+ 
+ 	fn = fib6_locate_1(root, daddr, dst_len,
+-			   offsetof(struct rt6_info, rt6i_dst));
++			   offsetof(struct rt6_info, rt6i_dst),
++			   exact_match);
+ 
+ #ifdef CONFIG_IPV6_SUBTREES
+ 	if (src_len) {
+ 		WARN_ON(saddr == NULL);
+ 		if (fn && fn->subtree)
+ 			fn = fib6_locate_1(fn->subtree, saddr, src_len,
+-					   offsetof(struct rt6_info, rt6i_src));
++					   offsetof(struct rt6_info, rt6i_src),
++					   exact_match);
+ 	}
+ #endif
+ 
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index 23f1caa124ff..f0bf05785a0b 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -2831,7 +2831,8 @@ static int ip6_route_del(struct fib6_config *cfg,
+ 
+ 	fn = fib6_locate(&table->tb6_root,
+ 			 &cfg->fc_dst, cfg->fc_dst_len,
+-			 &cfg->fc_src, cfg->fc_src_len);
++			 &cfg->fc_src, cfg->fc_src_len,
++			 true);
+ 
+ 	if (fn) {
+ 		for (rt = fn->leaf; rt; rt = rt->dst.rt6_next) {
+@@ -3040,7 +3041,7 @@ static struct rt6_info *rt6_get_route_info(struct net *net,
+ 		return NULL;
+ 
+ 	read_lock_bh(&table->tb6_lock);
+-	fn = fib6_locate(&table->tb6_root, prefix, prefixlen, NULL, 0);
++	fn = fib6_locate(&table->tb6_root, prefix, prefixlen, NULL, 0, true);
+ 	if (!fn)
+ 		goto out;
+ 
+-- 
+2.11.0
+

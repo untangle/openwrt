@@ -1,0 +1,34 @@
+From 9206667879c76fdfb9f1100fa13515a99b6ca893 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Wed, 10 Jan 2018 15:24:15 +0100
+Subject: [PATCH 33/34] netfilter: core: return EBUSY in case NAT hook is
+ already in use
+
+EEXIST is used for an object that already exists, with the same
+name/handle. However, there no same object there, instead there is a
+object that is using the single slot that is available for NAT hooks
+since patch f92b40a8b264 ("netfilter: core: only allow one nat hook per
+hook point"). Let's change this return value before this behaviour gets
+exposed in the first -rc.
+
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/netfilter/core.c b/net/netfilter/core.c
+index 3cd7e2a8b93c..701f7c208617 100644
+--- a/net/netfilter/core.c
++++ b/net/netfilter/core.c
+@@ -140,7 +140,7 @@ nf_hook_entries_grow(const struct nf_hook_entries *old,
+ 
+ 		if (reg->nat_hook && orig_ops[i]->nat_hook) {
+ 			kvfree(new);
+-			return ERR_PTR(-EEXIST);
++			return ERR_PTR(-EBUSY);
+ 		}
+ 
+ 		if (inserted || reg->priority > orig_ops[i]->priority) {
+-- 
+2.11.0
+

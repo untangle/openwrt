@@ -1,0 +1,45 @@
+From 83956853a17dfaee71e7e3d7b5b1ed41afe3919b Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Fri, 8 Dec 2017 17:01:55 +0100
+Subject: [PATCH 25/34] netfilter: nf_tables: reject nat hook registration if
+ prio is before conntrack
+
+No problem for iptables as priorities are fixed values defined in the
+nat modules, but in nftables the priority its coming from userspace.
+
+Reject in case we see that such a hook would not work.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/nf_tables_api.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index a8505eae7880..32a0bee08f3e 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -1238,7 +1238,7 @@ static void nf_tables_chain_destroy(struct nft_chain *chain)
+ 
+ struct nft_chain_hook {
+ 	u32				num;
+-	u32				priority;
++	s32				priority;
+ 	const struct nf_chain_type	*type;
+ 	struct net_device		*dev;
+ };
+@@ -1274,6 +1274,11 @@ static int nft_chain_parse_hook(struct net *net,
+ 	}
+ 	if (!(type->hook_mask & (1 << hook->num)))
+ 		return -EOPNOTSUPP;
++
++	if (type->type == NFT_CHAIN_T_NAT &&
++	    hook->priority <= NF_IP_PRI_CONNTRACK)
++		return -EOPNOTSUPP;
++
+ 	if (!try_module_get(type->owner))
+ 		return -ENOENT;
+ 
+-- 
+2.11.0
+
