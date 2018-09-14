@@ -1,0 +1,927 @@
+From 8020687b633968c4e515803e58c3c5116dcac6c8 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Mon, 14 May 2018 23:46:58 +0200
+Subject: [PATCH 32/34] netfilter: nf_nat: add nat type hooks to nat core
+
+Currently the packet rewrite and instantiation of nat NULL bindings
+happens from the protocol specific nat backend.
+
+Invocation occurs either via ip(6)table_nat or the nf_tables nat chain type.
+
+Invocation looks like this (simplified):
+NF_HOOK()
+   |
+   `---iptable_nat
+	 |
+	 `---> nf_nat_l3proto_ipv4 -> nf_nat_packet
+	               |
+          new packet? pass skb though iptables nat chain
+                       |
+		       `---> iptable_nat: ipt_do_table
+
+In nft case, this looks the same (nft_chain_nat_ipv4 instead of
+iptable_nat).
+
+This is a problem for two reasons:
+1. Can't use iptables nat and nf_tables nat at the same time,
+   as the first user adds a nat binding (nf_nat_l3proto_ipv4 adds a
+   NULL binding if do_table() did not find a matching nat rule so we
+   can detect post-nat tuple collisions).
+2. If you use e.g. nft_masq, snat, redir, etc. uses must also register
+   an empty base chain so that the nat core gets called fro NF_HOOK()
+   to do the reverse translation, which is neither obvious nor user
+   friendly.
+
+After this change, the base hook gets registered not from iptable_nat or
+nftables nat hooks, but from the l3 nat core.
+
+iptables/nft nat base hooks get registered with the nat core instead:
+
+NF_HOOK()
+   |
+   `---> nf_nat_l3proto_ipv4 -> nf_nat_packet
+		|
+         new packet? pass skb through iptables/nftables nat chains
+                |
+		+-> iptables_nat: ipt_do_table
+	        +-> nft nat chain x
+	        `-> nft nat chain y
+
+The nat core deals with null bindings and reverse translation.
+When no mapping exists, it calls the registered nat lookup hooks until
+one creates a new mapping.
+If both iptables and nftables nat hooks exist, the first matching
+one is used (i.e., higher priority wins).
+
+Also, nft users do not need to create empty nat hooks anymore,
+nat core always registers the base hooks that take care of reverse/reply
+translation.
+
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ include/net/netfilter/nf_nat_core.h      |  5 +-
+ include/net/netfilter/nf_nat_l3proto.h   | 52 ++-----------------
+ net/ipv4/netfilter/iptable_nat.c         | 85 ++++++++++++++++----------------
+ net/ipv4/netfilter/nf_nat_l3proto_ipv4.c | 82 ++++++++++++++++++++----------
+ net/ipv4/netfilter/nft_chain_nat_ipv4.c  | 51 +++----------------
+ net/ipv6/netfilter/ip6table_nat.c        | 84 +++++++++++++++----------------
+ net/ipv6/netfilter/nf_nat_l3proto_ipv6.c | 83 ++++++++++++++++++++-----------
+ net/ipv6/netfilter/nft_chain_nat_ipv6.c  | 48 +++---------------
+ net/netfilter/nf_nat_core.c              | 31 +++++++-----
+ 9 files changed, 232 insertions(+), 289 deletions(-)
+
+diff --git a/include/net/netfilter/nf_nat_core.h b/include/net/netfilter/nf_nat_core.h
+index 0d84dd29108d..c78e9be14b3d 100644
+--- a/include/net/netfilter/nf_nat_core.h
++++ b/include/net/netfilter/nf_nat_core.h
+@@ -13,10 +13,7 @@ unsigned int nf_nat_packet(struct nf_conn *ct, enum ip_conntrack_info ctinfo,
+ 
+ unsigned int
+ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
+-	       const struct nf_hook_state *state,
+-	       unsigned int (*do_chain)(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state));
++	       const struct nf_hook_state *state);
+ 
+ int nf_xfrm_me_harder(struct net *net, struct sk_buff *skb, unsigned int family);
+ 
+diff --git a/include/net/netfilter/nf_nat_l3proto.h b/include/net/netfilter/nf_nat_l3proto.h
+index 7c31ef1d17e3..26877277bea4 100644
+--- a/include/net/netfilter/nf_nat_l3proto.h
++++ b/include/net/netfilter/nf_nat_l3proto.h
+@@ -44,58 +44,14 @@ int nf_nat_icmp_reply_translation(struct sk_buff *skb, struct nf_conn *ct,
+ 				  enum ip_conntrack_info ctinfo,
+ 				  unsigned int hooknum);
+ 
+-unsigned int nf_nat_ipv4_in(void *priv, struct sk_buff *skb,
+-			    const struct nf_hook_state *state,
+-			    unsigned int (*do_chain)(void *priv,
+-						     struct sk_buff *skb,
+-						     const struct nf_hook_state *state));
+-
+-unsigned int nf_nat_ipv4_out(void *priv, struct sk_buff *skb,
+-			     const struct nf_hook_state *state,
+-			     unsigned int (*do_chain)(void *priv,
+-						      struct sk_buff *skb,
+-						      const struct nf_hook_state *state));
+-
+-unsigned int nf_nat_ipv4_local_fn(void *priv,
+-				  struct sk_buff *skb,
+-				  const struct nf_hook_state *state,
+-				  unsigned int (*do_chain)(void *priv,
+-							   struct sk_buff *skb,
+-							   const struct nf_hook_state *state));
+-
+-unsigned int nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
+-			    const struct nf_hook_state *state,
+-			    unsigned int (*do_chain)(void *priv,
+-						     struct sk_buff *skb,
+-						     const struct nf_hook_state *state));
+-
+ int nf_nat_icmpv6_reply_translation(struct sk_buff *skb, struct nf_conn *ct,
+ 				    enum ip_conntrack_info ctinfo,
+ 				    unsigned int hooknum, unsigned int hdrlen);
+ 
+-unsigned int nf_nat_ipv6_in(void *priv, struct sk_buff *skb,
+-			    const struct nf_hook_state *state,
+-			    unsigned int (*do_chain)(void *priv,
+-						     struct sk_buff *skb,
+-						     const struct nf_hook_state *state));
+-
+-unsigned int nf_nat_ipv6_out(void *priv, struct sk_buff *skb,
+-			     const struct nf_hook_state *state,
+-			     unsigned int (*do_chain)(void *priv,
+-						      struct sk_buff *skb,
+-						      const struct nf_hook_state *state));
+-
+-unsigned int nf_nat_ipv6_local_fn(void *priv,
+-				  struct sk_buff *skb,
+-				  const struct nf_hook_state *state,
+-				  unsigned int (*do_chain)(void *priv,
+-							   struct sk_buff *skb,
+-							   const struct nf_hook_state *state));
++int nf_nat_l3proto_ipv4_register_fn(struct net *net, const struct nf_hook_ops *ops);
++void nf_nat_l3proto_ipv4_unregister_fn(struct net *net, const struct nf_hook_ops *ops);
+ 
+-unsigned int nf_nat_ipv6_fn(void *priv, struct sk_buff *skb,
+-			    const struct nf_hook_state *state,
+-			    unsigned int (*do_chain)(void *priv,
+-						     struct sk_buff *skb,
+-						     const struct nf_hook_state *state));
++int nf_nat_l3proto_ipv6_register_fn(struct net *net, const struct nf_hook_ops *ops);
++void nf_nat_l3proto_ipv6_unregister_fn(struct net *net, const struct nf_hook_ops *ops);
+ 
+ #endif /* _NF_NAT_L3PROTO_H */
+diff --git a/net/ipv4/netfilter/iptable_nat.c b/net/ipv4/netfilter/iptable_nat.c
+index 529d89ec31e8..a317445448bf 100644
+--- a/net/ipv4/netfilter/iptable_nat.c
++++ b/net/ipv4/netfilter/iptable_nat.c
+@@ -38,69 +38,58 @@ static unsigned int iptable_nat_do_chain(void *priv,
+ 	return ipt_do_table(skb, state, state->net->ipv4.nat_table);
+ }
+ 
+-static unsigned int iptable_nat_ipv4_fn(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_fn(priv, skb, state, iptable_nat_do_chain);
+-}
+-
+-static unsigned int iptable_nat_ipv4_in(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_in(priv, skb, state, iptable_nat_do_chain);
+-}
+-
+-static unsigned int iptable_nat_ipv4_out(void *priv,
+-					 struct sk_buff *skb,
+-					 const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_out(priv, skb, state, iptable_nat_do_chain);
+-}
+-
+-static unsigned int iptable_nat_ipv4_local_fn(void *priv,
+-					      struct sk_buff *skb,
+-					      const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_local_fn(priv, skb, state, iptable_nat_do_chain);
+-}
+-
+ static const struct nf_hook_ops nf_nat_ipv4_ops[] = {
+-	/* Before packet filtering, change destination */
+ 	{
+-		.hook		= iptable_nat_ipv4_in,
++		.hook		= iptable_nat_do_chain,
+ 		.pf		= NFPROTO_IPV4,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_PRE_ROUTING,
+ 		.priority	= NF_IP_PRI_NAT_DST,
+ 	},
+-	/* After packet filtering, change source */
+ 	{
+-		.hook		= iptable_nat_ipv4_out,
++		.hook		= iptable_nat_do_chain,
+ 		.pf		= NFPROTO_IPV4,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_POST_ROUTING,
+ 		.priority	= NF_IP_PRI_NAT_SRC,
+ 	},
+-	/* Before packet filtering, change destination */
+ 	{
+-		.hook		= iptable_nat_ipv4_local_fn,
++		.hook		= iptable_nat_do_chain,
+ 		.pf		= NFPROTO_IPV4,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_LOCAL_OUT,
+ 		.priority	= NF_IP_PRI_NAT_DST,
+ 	},
+-	/* After packet filtering, change source */
+ 	{
+-		.hook		= iptable_nat_ipv4_fn,
++		.hook		= iptable_nat_do_chain,
+ 		.pf		= NFPROTO_IPV4,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_LOCAL_IN,
+ 		.priority	= NF_IP_PRI_NAT_SRC,
+ 	},
+ };
+ 
++static int ipt_nat_register_lookups(struct net *net)
++{
++	int i, ret;
++
++	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv4_ops); i++) {
++		ret = nf_nat_l3proto_ipv4_register_fn(net, &nf_nat_ipv4_ops[i]);
++		if (ret) {
++			while (i)
++				nf_nat_l3proto_ipv4_unregister_fn(net, &nf_nat_ipv4_ops[--i]);
++
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++static void ipt_nat_unregister_lookups(struct net *net)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv4_ops); i++)
++		nf_nat_l3proto_ipv4_unregister_fn(net, &nf_nat_ipv4_ops[i]);
++}
++
+ static int __net_init iptable_nat_table_init(struct net *net)
+ {
+ 	struct ipt_replace *repl;
+@@ -113,7 +102,18 @@ static int __net_init iptable_nat_table_init(struct net *net)
+ 	if (repl == NULL)
+ 		return -ENOMEM;
+ 	ret = ipt_register_table(net, &nf_nat_ipv4_table, repl,
+-				 nf_nat_ipv4_ops, &net->ipv4.nat_table);
++				 NULL, &net->ipv4.nat_table);
++	if (ret < 0) {
++		kfree(repl);
++		return ret;
++	}
++
++	ret = ipt_nat_register_lookups(net);
++	if (ret < 0) {
++		ipt_unregister_table(net, net->ipv4.nat_table, NULL);
++		net->ipv4.nat_table = NULL;
++	}
++
+ 	kfree(repl);
+ 	return ret;
+ }
+@@ -122,7 +122,8 @@ static void __net_exit iptable_nat_net_exit(struct net *net)
+ {
+ 	if (!net->ipv4.nat_table)
+ 		return;
+-	ipt_unregister_table(net, net->ipv4.nat_table, nf_nat_ipv4_ops);
++	ipt_nat_unregister_lookups(net);
++	ipt_unregister_table(net, net->ipv4.nat_table, NULL);
+ 	net->ipv4.nat_table = NULL;
+ }
+ 
+diff --git a/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c b/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c
+index c60e6327a4c8..5e9195e7f091 100644
+--- a/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c
++++ b/net/ipv4/netfilter/nf_nat_l3proto_ipv4.c
+@@ -241,12 +241,9 @@ int nf_nat_icmp_reply_translation(struct sk_buff *skb,
+ }
+ EXPORT_SYMBOL_GPL(nf_nat_icmp_reply_translation);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
+-	       const struct nf_hook_state *state,
+-	       unsigned int (*do_chain)(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state))
++	       const struct nf_hook_state *state)
+ {
+ 	struct nf_conn *ct;
+ 	enum ip_conntrack_info ctinfo;
+@@ -265,35 +262,28 @@ nf_nat_ipv4_fn(void *priv, struct sk_buff *skb,
+ 		}
+ 	}
+ 
+-	return nf_nat_inet_fn(priv, skb, state, do_chain);
++	return nf_nat_inet_fn(priv, skb, state);
+ }
+ EXPORT_SYMBOL_GPL(nf_nat_ipv4_fn);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv4_in(void *priv, struct sk_buff *skb,
+-	       const struct nf_hook_state *state,
+-	       unsigned int (*do_chain)(void *priv,
+-					 struct sk_buff *skb,
+-					 const struct nf_hook_state *state))
++	       const struct nf_hook_state *state)
+ {
+ 	unsigned int ret;
+ 	__be32 daddr = ip_hdr(skb)->daddr;
+ 
+-	ret = nf_nat_ipv4_fn(priv, skb, state, do_chain);
++	ret = nf_nat_ipv4_fn(priv, skb, state);
+ 	if (ret != NF_DROP && ret != NF_STOLEN &&
+ 	    daddr != ip_hdr(skb)->daddr)
+ 		skb_dst_drop(skb);
+ 
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv4_in);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv4_out(void *priv, struct sk_buff *skb,
+-		const struct nf_hook_state *state,
+-		unsigned int (*do_chain)(void *priv,
+-					  struct sk_buff *skb,
+-					  const struct nf_hook_state *state))
++		const struct nf_hook_state *state)
+ {
+ #ifdef CONFIG_XFRM
+ 	const struct nf_conn *ct;
+@@ -302,7 +292,7 @@ nf_nat_ipv4_out(void *priv, struct sk_buff *skb,
+ #endif
+ 	unsigned int ret;
+ 
+-	ret = nf_nat_ipv4_fn(priv, skb, state, do_chain);
++	ret = nf_nat_ipv4_fn(priv, skb, state);
+ #ifdef CONFIG_XFRM
+ 	if (ret != NF_DROP && ret != NF_STOLEN &&
+ 	    !(IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED) &&
+@@ -322,21 +312,17 @@ nf_nat_ipv4_out(void *priv, struct sk_buff *skb,
+ #endif
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv4_out);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv4_local_fn(void *priv, struct sk_buff *skb,
+-		     const struct nf_hook_state *state,
+-		     unsigned int (*do_chain)(void *priv,
+-					       struct sk_buff *skb,
+-					       const struct nf_hook_state *state))
++		     const struct nf_hook_state *state)
+ {
+ 	const struct nf_conn *ct;
+ 	enum ip_conntrack_info ctinfo;
+ 	unsigned int ret;
+ 	int err;
+ 
+-	ret = nf_nat_ipv4_fn(priv, skb, state, do_chain);
++	ret = nf_nat_ipv4_fn(priv, skb, state);
+ 	if (ret != NF_DROP && ret != NF_STOLEN &&
+ 	    (ct = nf_ct_get(skb, &ctinfo)) != NULL) {
+ 		enum ip_conntrack_dir dir = CTINFO2DIR(ctinfo);
+@@ -360,7 +346,49 @@ nf_nat_ipv4_local_fn(void *priv, struct sk_buff *skb,
+ 	}
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv4_local_fn);
++
++static const struct nf_hook_ops nf_nat_ipv4_ops[] = {
++	/* Before packet filtering, change destination */
++	{
++		.hook		= nf_nat_ipv4_in,
++		.pf		= NFPROTO_IPV4,
++		.hooknum	= NF_INET_PRE_ROUTING,
++		.priority	= NF_IP_PRI_NAT_DST,
++	},
++	/* After packet filtering, change source */
++	{
++		.hook		= nf_nat_ipv4_out,
++		.pf		= NFPROTO_IPV4,
++		.hooknum	= NF_INET_POST_ROUTING,
++		.priority	= NF_IP_PRI_NAT_SRC,
++	},
++	/* Before packet filtering, change destination */
++	{
++		.hook		= nf_nat_ipv4_local_fn,
++		.pf		= NFPROTO_IPV4,
++		.hooknum	= NF_INET_LOCAL_OUT,
++		.priority	= NF_IP_PRI_NAT_DST,
++	},
++	/* After packet filtering, change source */
++	{
++		.hook		= nf_nat_ipv4_fn,
++		.pf		= NFPROTO_IPV4,
++		.hooknum	= NF_INET_LOCAL_IN,
++		.priority	= NF_IP_PRI_NAT_SRC,
++	},
++};
++
++int nf_nat_l3proto_ipv4_register_fn(struct net *net, const struct nf_hook_ops *ops)
++{
++	return nf_nat_register_fn(net, ops, nf_nat_ipv4_ops, ARRAY_SIZE(nf_nat_ipv4_ops));
++}
++EXPORT_SYMBOL_GPL(nf_nat_l3proto_ipv4_register_fn);
++
++void nf_nat_l3proto_ipv4_unregister_fn(struct net *net, const struct nf_hook_ops *ops)
++{
++	nf_nat_unregister_fn(net, ops, ARRAY_SIZE(nf_nat_ipv4_ops));
++}
++EXPORT_SYMBOL_GPL(nf_nat_l3proto_ipv4_unregister_fn);
+ 
+ static int __init nf_nat_l3proto_ipv4_init(void)
+ {
+diff --git a/net/ipv4/netfilter/nft_chain_nat_ipv4.c b/net/ipv4/netfilter/nft_chain_nat_ipv4.c
+index 14b308d3a81b..6f7f0828b2a2 100644
+--- a/net/ipv4/netfilter/nft_chain_nat_ipv4.c
++++ b/net/ipv4/netfilter/nft_chain_nat_ipv4.c
+@@ -27,8 +27,8 @@
+ #include <net/ip.h>
+ 
+ static unsigned int nft_nat_do_chain(void *priv,
+-				      struct sk_buff *skb,
+-				      const struct nf_hook_state *state)
++				     struct sk_buff *skb,
++				     const struct nf_hook_state *state)
+ {
+ 	struct nft_pktinfo pkt;
+ 
+@@ -38,49 +38,14 @@ static unsigned int nft_nat_do_chain(void *priv,
+ 	return nft_do_chain(&pkt, priv);
+ }
+ 
+-static unsigned int nft_nat_ipv4_fn(void *priv,
+-				    struct sk_buff *skb,
+-				    const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_fn(priv, skb, state, nft_nat_do_chain);
+-}
+-
+-static unsigned int nft_nat_ipv4_in(void *priv,
+-				    struct sk_buff *skb,
+-				    const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_in(priv, skb, state, nft_nat_do_chain);
+-}
+-
+-static unsigned int nft_nat_ipv4_out(void *priv,
+-				     struct sk_buff *skb,
+-				     const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_out(priv, skb, state, nft_nat_do_chain);
+-}
+-
+-static unsigned int nft_nat_ipv4_local_fn(void *priv,
+-					  struct sk_buff *skb,
+-					  const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv4_local_fn(priv, skb, state, nft_nat_do_chain);
+-}
+-
+ static int nft_nat_ipv4_reg(struct net *net, const struct nf_hook_ops *ops)
+ {
+-	int ret = nf_register_net_hook(net, ops);
+-	if (ret == 0) {
+-		ret = nf_ct_netns_get(net, NFPROTO_IPV4);
+-		if (ret)
+-			 nf_unregister_net_hook(net, ops);
+-	}
+-	return ret;
++	return nf_nat_l3proto_ipv4_register_fn(net, ops);
+ }
+ 
+ static void nft_nat_ipv4_unreg(struct net *net, const struct nf_hook_ops *ops)
+ {
+-	nf_unregister_net_hook(net, ops);
+-	nf_ct_netns_put(net, NFPROTO_IPV4);
++	nf_nat_l3proto_ipv4_unregister_fn(net, ops);
+ }
+ 
+ static const struct nft_chain_type nft_chain_nat_ipv4 = {
+@@ -93,10 +58,10 @@ static const struct nft_chain_type nft_chain_nat_ipv4 = {
+ 			  (1 << NF_INET_LOCAL_OUT) |
+ 			  (1 << NF_INET_LOCAL_IN),
+ 	.hooks		= {
+-		[NF_INET_PRE_ROUTING]	= nft_nat_ipv4_in,
+-		[NF_INET_POST_ROUTING]	= nft_nat_ipv4_out,
+-		[NF_INET_LOCAL_OUT]	= nft_nat_ipv4_local_fn,
+-		[NF_INET_LOCAL_IN]	= nft_nat_ipv4_fn,
++		[NF_INET_PRE_ROUTING]	= nft_nat_do_chain,
++		[NF_INET_POST_ROUTING]	= nft_nat_do_chain,
++		[NF_INET_LOCAL_OUT]	= nft_nat_do_chain,
++		[NF_INET_LOCAL_IN]	= nft_nat_do_chain,
+ 	},
+ 	.ops_register = nft_nat_ipv4_reg,
+ 	.ops_unregister = nft_nat_ipv4_unreg,
+diff --git a/net/ipv6/netfilter/ip6table_nat.c b/net/ipv6/netfilter/ip6table_nat.c
+index 2bf554e18af8..67ba70ab9f5c 100644
+--- a/net/ipv6/netfilter/ip6table_nat.c
++++ b/net/ipv6/netfilter/ip6table_nat.c
+@@ -40,69 +40,58 @@ static unsigned int ip6table_nat_do_chain(void *priv,
+ 	return ip6t_do_table(skb, state, state->net->ipv6.ip6table_nat);
+ }
+ 
+-static unsigned int ip6table_nat_fn(void *priv,
+-				    struct sk_buff *skb,
+-				    const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_fn(priv, skb, state, ip6table_nat_do_chain);
+-}
+-
+-static unsigned int ip6table_nat_in(void *priv,
+-				    struct sk_buff *skb,
+-				    const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_in(priv, skb, state, ip6table_nat_do_chain);
+-}
+-
+-static unsigned int ip6table_nat_out(void *priv,
+-				     struct sk_buff *skb,
+-				     const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_out(priv, skb, state, ip6table_nat_do_chain);
+-}
+-
+-static unsigned int ip6table_nat_local_fn(void *priv,
+-					  struct sk_buff *skb,
+-					  const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_local_fn(priv, skb, state, ip6table_nat_do_chain);
+-}
+-
+ static const struct nf_hook_ops nf_nat_ipv6_ops[] = {
+-	/* Before packet filtering, change destination */
+ 	{
+-		.hook		= ip6table_nat_in,
++		.hook		= ip6table_nat_do_chain,
+ 		.pf		= NFPROTO_IPV6,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_PRE_ROUTING,
+ 		.priority	= NF_IP6_PRI_NAT_DST,
+ 	},
+-	/* After packet filtering, change source */
+ 	{
+-		.hook		= ip6table_nat_out,
++		.hook		= ip6table_nat_do_chain,
+ 		.pf		= NFPROTO_IPV6,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_POST_ROUTING,
+ 		.priority	= NF_IP6_PRI_NAT_SRC,
+ 	},
+-	/* Before packet filtering, change destination */
+ 	{
+-		.hook		= ip6table_nat_local_fn,
++		.hook		= ip6table_nat_do_chain,
+ 		.pf		= NFPROTO_IPV6,
+-		.nat_hook	= true,
+ 		.hooknum	= NF_INET_LOCAL_OUT,
+ 		.priority	= NF_IP6_PRI_NAT_DST,
+ 	},
+-	/* After packet filtering, change source */
+ 	{
+-		.hook		= ip6table_nat_fn,
+-		.nat_hook	= true,
++		.hook		= ip6table_nat_do_chain,
+ 		.pf		= NFPROTO_IPV6,
+ 		.hooknum	= NF_INET_LOCAL_IN,
+ 		.priority	= NF_IP6_PRI_NAT_SRC,
+ 	},
+ };
+ 
++static int ip6t_nat_register_lookups(struct net *net)
++{
++	int i, ret;
++
++	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv6_ops); i++) {
++		ret = nf_nat_l3proto_ipv6_register_fn(net, &nf_nat_ipv6_ops[i]);
++		if (ret) {
++			while (i)
++				nf_nat_l3proto_ipv6_unregister_fn(net, &nf_nat_ipv6_ops[--i]);
++
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
++static void ip6t_nat_unregister_lookups(struct net *net)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv6_ops); i++)
++		nf_nat_l3proto_ipv6_unregister_fn(net, &nf_nat_ipv6_ops[i]);
++}
++
+ static int __net_init ip6table_nat_table_init(struct net *net)
+ {
+ 	struct ip6t_replace *repl;
+@@ -115,7 +104,17 @@ static int __net_init ip6table_nat_table_init(struct net *net)
+ 	if (repl == NULL)
+ 		return -ENOMEM;
+ 	ret = ip6t_register_table(net, &nf_nat_ipv6_table, repl,
+-				  nf_nat_ipv6_ops, &net->ipv6.ip6table_nat);
++				  NULL, &net->ipv6.ip6table_nat);
++	if (ret < 0) {
++		kfree(repl);
++		return ret;
++	}
++
++	ret = ip6t_nat_register_lookups(net);
++	if (ret < 0) {
++		ip6t_unregister_table(net, net->ipv6.ip6table_nat, NULL);
++		net->ipv6.ip6table_nat = NULL;
++	}
+ 	kfree(repl);
+ 	return ret;
+ }
+@@ -124,7 +123,8 @@ static void __net_exit ip6table_nat_net_exit(struct net *net)
+ {
+ 	if (!net->ipv6.ip6table_nat)
+ 		return;
+-	ip6t_unregister_table(net, net->ipv6.ip6table_nat, nf_nat_ipv6_ops);
++	ip6t_nat_unregister_lookups(net);
++	ip6t_unregister_table(net, net->ipv6.ip6table_nat, NULL);
+ 	net->ipv6.ip6table_nat = NULL;
+ }
+ 
+diff --git a/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c b/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c
+index f966f67b6809..a13eaa6ede13 100644
+--- a/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c
++++ b/net/ipv6/netfilter/nf_nat_l3proto_ipv6.c
+@@ -252,12 +252,9 @@ int nf_nat_icmpv6_reply_translation(struct sk_buff *skb,
+ }
+ EXPORT_SYMBOL_GPL(nf_nat_icmpv6_reply_translation);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv6_fn(void *priv, struct sk_buff *skb,
+-	       const struct nf_hook_state *state,
+-	       unsigned int (*do_chain)(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state))
++	       const struct nf_hook_state *state)
+ {
+ 	struct nf_conn *ct;
+ 	enum ip_conntrack_info ctinfo;
+@@ -289,35 +286,27 @@ nf_nat_ipv6_fn(void *priv, struct sk_buff *skb,
+ 		}
+ 	}
+ 
+-	return nf_nat_inet_fn(priv, skb, state, do_chain);
++	return nf_nat_inet_fn(priv, skb, state);
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv6_fn);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv6_in(void *priv, struct sk_buff *skb,
+-	       const struct nf_hook_state *state,
+-	       unsigned int (*do_chain)(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state))
++	       const struct nf_hook_state *state)
+ {
+ 	unsigned int ret;
+ 	struct in6_addr daddr = ipv6_hdr(skb)->daddr;
+ 
+-	ret = nf_nat_ipv6_fn(priv, skb, state, do_chain);
++	ret = nf_nat_ipv6_fn(priv, skb, state);
+ 	if (ret != NF_DROP && ret != NF_STOLEN &&
+ 	    ipv6_addr_cmp(&daddr, &ipv6_hdr(skb)->daddr))
+ 		skb_dst_drop(skb);
+ 
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv6_in);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv6_out(void *priv, struct sk_buff *skb,
+-		const struct nf_hook_state *state,
+-		unsigned int (*do_chain)(void *priv,
+-					 struct sk_buff *skb,
+-					 const struct nf_hook_state *state))
++		const struct nf_hook_state *state)
+ {
+ #ifdef CONFIG_XFRM
+ 	const struct nf_conn *ct;
+@@ -326,7 +315,7 @@ nf_nat_ipv6_out(void *priv, struct sk_buff *skb,
+ #endif
+ 	unsigned int ret;
+ 
+-	ret = nf_nat_ipv6_fn(priv, skb, state, do_chain);
++	ret = nf_nat_ipv6_fn(priv, skb, state);
+ #ifdef CONFIG_XFRM
+ 	if (ret != NF_DROP && ret != NF_STOLEN &&
+ 	    !(IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) &&
+@@ -346,21 +335,17 @@ nf_nat_ipv6_out(void *priv, struct sk_buff *skb,
+ #endif
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv6_out);
+ 
+-unsigned int
++static unsigned int
+ nf_nat_ipv6_local_fn(void *priv, struct sk_buff *skb,
+-		     const struct nf_hook_state *state,
+-		     unsigned int (*do_chain)(void *priv,
+-					      struct sk_buff *skb,
+-					      const struct nf_hook_state *state))
++		     const struct nf_hook_state *state)
+ {
+ 	const struct nf_conn *ct;
+ 	enum ip_conntrack_info ctinfo;
+ 	unsigned int ret;
+ 	int err;
+ 
+-	ret = nf_nat_ipv6_fn(priv, skb, state, do_chain);
++	ret = nf_nat_ipv6_fn(priv, skb, state);
+ 	if (ret != NF_DROP && ret != NF_STOLEN &&
+ 	    (ct = nf_ct_get(skb, &ctinfo)) != NULL) {
+ 		enum ip_conntrack_dir dir = CTINFO2DIR(ctinfo);
+@@ -384,7 +369,49 @@ nf_nat_ipv6_local_fn(void *priv, struct sk_buff *skb,
+ 	}
+ 	return ret;
+ }
+-EXPORT_SYMBOL_GPL(nf_nat_ipv6_local_fn);
++
++static const struct nf_hook_ops nf_nat_ipv6_ops[] = {
++	/* Before packet filtering, change destination */
++	{
++		.hook		= nf_nat_ipv6_in,
++		.pf		= NFPROTO_IPV6,
++		.hooknum	= NF_INET_PRE_ROUTING,
++		.priority	= NF_IP6_PRI_NAT_DST,
++	},
++	/* After packet filtering, change source */
++	{
++		.hook		= nf_nat_ipv6_out,
++		.pf		= NFPROTO_IPV6,
++		.hooknum	= NF_INET_POST_ROUTING,
++		.priority	= NF_IP6_PRI_NAT_SRC,
++	},
++	/* Before packet filtering, change destination */
++	{
++		.hook		= nf_nat_ipv6_local_fn,
++		.pf		= NFPROTO_IPV6,
++		.hooknum	= NF_INET_LOCAL_OUT,
++		.priority	= NF_IP6_PRI_NAT_DST,
++	},
++	/* After packet filtering, change source */
++	{
++		.hook		= nf_nat_ipv6_fn,
++		.pf		= NFPROTO_IPV6,
++		.hooknum	= NF_INET_LOCAL_IN,
++		.priority	= NF_IP6_PRI_NAT_SRC,
++	},
++};
++
++int nf_nat_l3proto_ipv6_register_fn(struct net *net, const struct nf_hook_ops *ops)
++{
++	return nf_nat_register_fn(net, ops, nf_nat_ipv6_ops, ARRAY_SIZE(nf_nat_ipv6_ops));
++}
++EXPORT_SYMBOL_GPL(nf_nat_l3proto_ipv6_register_fn);
++
++void nf_nat_l3proto_ipv6_unregister_fn(struct net *net, const struct nf_hook_ops *ops)
++{
++	nf_nat_unregister_fn(net, ops, ARRAY_SIZE(nf_nat_ipv6_ops));
++}
++EXPORT_SYMBOL_GPL(nf_nat_l3proto_ipv6_unregister_fn);
+ 
+ static int __init nf_nat_l3proto_ipv6_init(void)
+ {
+diff --git a/net/ipv6/netfilter/nft_chain_nat_ipv6.c b/net/ipv6/netfilter/nft_chain_nat_ipv6.c
+index 7f5f02272567..0c3dbc9ad595 100644
+--- a/net/ipv6/netfilter/nft_chain_nat_ipv6.c
++++ b/net/ipv6/netfilter/nft_chain_nat_ipv6.c
+@@ -36,50 +36,14 @@ static unsigned int nft_nat_do_chain(void *priv,
+ 	return nft_do_chain(&pkt, priv);
+ }
+ 
+-static unsigned int nft_nat_ipv6_fn(void *priv,
+-				    struct sk_buff *skb,
+-				    const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_fn(priv, skb, state, nft_nat_do_chain);
+-}
+-
+-static unsigned int nft_nat_ipv6_in(void *priv,
+-				    struct sk_buff *skb,
+-				    const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_in(priv, skb, state, nft_nat_do_chain);
+-}
+-
+-static unsigned int nft_nat_ipv6_out(void *priv,
+-				     struct sk_buff *skb,
+-				     const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_out(priv, skb, state, nft_nat_do_chain);
+-}
+-
+-static unsigned int nft_nat_ipv6_local_fn(void *priv,
+-					  struct sk_buff *skb,
+-					  const struct nf_hook_state *state)
+-{
+-	return nf_nat_ipv6_local_fn(priv, skb, state, nft_nat_do_chain);
+-}
+-
+ static int nft_nat_ipv6_reg(struct net *net, const struct nf_hook_ops *ops)
+ {
+-	int ret = nf_register_net_hook(net, ops);
+-	if (ret == 0) {
+-		ret = nf_ct_netns_get(net, NFPROTO_IPV6);
+-		if (ret)
+-			 nf_unregister_net_hook(net, ops);
+-	}
+-
+-	return ret;
++	return nf_nat_l3proto_ipv6_register_fn(net, ops);
+ }
+ 
+ static void nft_nat_ipv6_unreg(struct net *net, const struct nf_hook_ops *ops)
+ {
+-	nf_unregister_net_hook(net, ops);
+-	nf_ct_netns_put(net, NFPROTO_IPV6);
++	nf_nat_l3proto_ipv6_unregister_fn(net, ops);
+ }
+ 
+ static const struct nft_chain_type nft_chain_nat_ipv6 = {
+@@ -92,10 +56,10 @@ static const struct nft_chain_type nft_chain_nat_ipv6 = {
+ 			  (1 << NF_INET_LOCAL_OUT) |
+ 			  (1 << NF_INET_LOCAL_IN),
+ 	.hooks		= {
+-		[NF_INET_PRE_ROUTING]	= nft_nat_ipv6_in,
+-		[NF_INET_POST_ROUTING]	= nft_nat_ipv6_out,
+-		[NF_INET_LOCAL_OUT]	= nft_nat_ipv6_local_fn,
+-		[NF_INET_LOCAL_IN]	= nft_nat_ipv6_fn,
++		[NF_INET_PRE_ROUTING]	= nft_nat_do_chain,
++		[NF_INET_POST_ROUTING]	= nft_nat_do_chain,
++		[NF_INET_LOCAL_OUT]	= nft_nat_do_chain,
++		[NF_INET_LOCAL_IN]	= nft_nat_do_chain,
+ 	},
+ 	.ops_register		= nft_nat_ipv6_reg,
+ 	.ops_unregister		= nft_nat_ipv6_unreg,
+diff --git a/net/netfilter/nf_nat_core.c b/net/netfilter/nf_nat_core.c
+index e363448883d4..d185a236c366 100644
+--- a/net/netfilter/nf_nat_core.c
++++ b/net/netfilter/nf_nat_core.c
+@@ -533,10 +533,7 @@ EXPORT_SYMBOL_GPL(nf_nat_packet);
+ 
+ unsigned int
+ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
+-	       const struct nf_hook_state *state,
+-	       unsigned int (*do_chain)(void *priv,
+-					struct sk_buff *skb,
+-					const struct nf_hook_state *state))
++	       const struct nf_hook_state *state)
+ {
+ 	struct nf_conn *ct;
+ 	enum ip_conntrack_info ctinfo;
+@@ -564,15 +561,23 @@ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
+ 		 * or local packets.
+ 		 */
+ 		if (!nf_nat_initialized(ct, maniptype)) {
++			struct nf_nat_lookup_hook_priv *lpriv = priv;
++			struct nf_hook_entries *e = rcu_dereference(lpriv->entries);
+ 			unsigned int ret;
+-
+-			ret = do_chain(priv, skb, state);
+-			if (ret != NF_ACCEPT)
+-				return ret;
+-
+-			if (nf_nat_initialized(ct, HOOK2MANIP(state->hook)))
+-				break;
+-
++			int i;
++
++			if (!e)
++				goto null_bind;
++
++			for (i = 0; i < e->num_hook_entries; i++) {
++				ret = e->hooks[i].hook(e->hooks[i].priv, skb,
++						       state);
++				if (ret != NF_ACCEPT)
++					return ret;
++				if (nf_nat_initialized(ct, maniptype))
++					goto do_nat;
++			}
++null_bind:
+ 			ret = nf_nat_alloc_null_binding(ct, state->hook);
+ 			if (ret != NF_ACCEPT)
+ 				return ret;
+@@ -592,7 +597,7 @@ nf_nat_inet_fn(void *priv, struct sk_buff *skb,
+ 		if (nf_nat_oif_changed(state->hook, ctinfo, nat, state->out))
+ 			goto oif_changed;
+ 	}
+-
++do_nat:
+ 	return nf_nat_packet(ct, ctinfo, state->hook, skb);
+ 
+ oif_changed:
+-- 
+2.11.0
+

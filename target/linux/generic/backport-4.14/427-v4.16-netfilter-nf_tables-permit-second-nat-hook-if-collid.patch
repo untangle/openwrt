@@ -1,0 +1,128 @@
+From 1a6f3520d9058e8c57e6805a820d8f675e7e07a6 Mon Sep 17 00:00:00 2001
+From: Florian Westphal <fw@strlen.de>
+Date: Sun, 18 Mar 2018 19:22:39 +0100
+Subject: [PATCH 28/34] netfilter: nf_tables: permit second nat hook if
+ colliding hook is going away
+
+Sergei Trofimovich reported that restoring an nft ruleset doesn't work
+anymore unless old rule content is flushed first.
+
+The problem stems from a recent change designed to prevent multiple nat
+hooks at the same hook point locations and nftables transaction model.
+
+A 'flush ruleset' won't take effect until the entire transaction has
+completed.
+
+So, if one has a nft.rules file that contains a 'flush ruleset',
+followed by a nat hook register request, then 'nft -f file' will work,
+but running 'nft -f file' again will fail with -EBUSY.
+
+Reason is that nftables will place the flush/removal requests in the
+transaction list, but it will not act on the removal until after all new
+rules are in place.
+
+The netfilter core will therefore get request to register a new nat
+hook before the old one is removed -- this now fails as the netfilter
+core can't know the existing hook is staged for removal.
+
+To fix this, we can search the transaction log when a hook collision
+is detected.  The collision is okay if
+
+ 1. there is a delete request pending for the nat hook that is already
+    registered.
+ 2. there is no second add request for a matching nat hook.
+    This is required to only apply the exception once.
+
+Fixes: f92b40a8b2645 ("netfilter: core: only allow one nat hook per hook point")
+Signed-off-by: Florian Westphal <fw@strlen.de>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+---
+ net/netfilter/nf_tables_api.c | 64 ++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 63 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nf_tables_api.c b/net/netfilter/nf_tables_api.c
+index 389ccbdee7ab..b0908e12433b 100644
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -74,15 +74,77 @@ static void nft_trans_destroy(struct nft_trans *trans)
+ 	kfree(trans);
+ }
+ 
++/* removal requests are queued in the commit_list, but not acted upon
++ * until after all new rules are in place.
++ *
++ * Therefore, nf_register_net_hook(net, &nat_hook) runs before pending
++ * nf_unregister_net_hook().
++ *
++ * nf_register_net_hook thus fails if a nat hook is already in place
++ * even if the conflicting hook is about to be removed.
++ *
++ * If collision is detected, search commit_log for DELCHAIN matching
++ * the new nat hooknum; if we find one collision is temporary:
++ *
++ * Either transaction is aborted (new/colliding hook is removed), or
++ * transaction is committed (old hook is removed).
++ */
++static bool nf_tables_allow_nat_conflict(const struct net *net,
++					 const struct nf_hook_ops *ops)
++{
++	const struct nft_trans *trans;
++	bool ret = false;
++
++	if (!ops->nat_hook)
++		return false;
++
++	list_for_each_entry(trans, &net->nft.commit_list, list) {
++		const struct nf_hook_ops *pending_ops;
++		const struct nft_chain *pending;
++
++		if (trans->msg_type != NFT_MSG_NEWCHAIN &&
++		    trans->msg_type != NFT_MSG_DELCHAIN)
++			continue;
++
++		pending = trans->ctx.chain;
++		if (!nft_is_base_chain(pending))
++			continue;
++
++		pending_ops = &nft_base_chain(pending)->ops;
++		if (pending_ops->nat_hook &&
++		    pending_ops->pf == ops->pf &&
++		    pending_ops->hooknum == ops->hooknum) {
++			/* other hook registration already pending? */
++			if (trans->msg_type == NFT_MSG_NEWCHAIN)
++				return false;
++
++			ret = true;
++		}
++	}
++
++	return ret;
++}
++
+ static int nf_tables_register_hook(struct net *net,
+ 				   const struct nft_table *table,
+ 				   struct nft_chain *chain)
+ {
++	struct nf_hook_ops *ops;
++	int ret;
++
+ 	if (table->flags & NFT_TABLE_F_DORMANT ||
+ 	    !nft_is_base_chain(chain))
+ 		return 0;
+ 
+-	return nf_register_net_hook(net, &nft_base_chain(chain)->ops);
++	ops = &nft_base_chain(chain)->ops;
++	ret = nf_register_net_hook(net, ops);
++	if (ret == -EBUSY && nf_tables_allow_nat_conflict(net, ops)) {
++		ops->nat_hook = false;
++		ret = nf_register_net_hook(net, ops);
++		ops->nat_hook = true;
++	}
++
++	return ret;
+ }
+ 
+ static void nf_tables_unregister_hook(struct net *net,
+-- 
+2.11.0
+

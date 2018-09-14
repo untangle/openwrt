@@ -1,0 +1,61 @@
+From 280661ff72d7ed03ea094a22171e57562d33be4b Mon Sep 17 00:00:00 2001
+From: Wei Wang <weiwan@google.com>
+Date: Fri, 6 Oct 2017 12:06:09 -0700
+Subject: [PATCH 14/34] ipv6: add key length check into rt6_select()
+
+After rwlock is replaced with rcu and spinlock, fib6_lookup() could
+potentially return an intermediate node if other thread is doing
+fib6_del() on a route which is the only route on the node so that
+fib6_repair_tree() will be called on this node and potentially assigns
+fn->leaf to the its child's fn->leaf.
+
+In order to detect this situation in rt6_select(), we have to check if
+fn->fn_bit is consistent with the key length stored in the route. And
+depending on if the fn is in the subtree or not, the key is either
+rt->rt6i_dst or rt->rt6i_src.
+If any inconsistency is found, that means the node no longer holds valid
+routes in it. So net->ipv6.ip6_null_entry is returned.
+
+Signed-off-by: Wei Wang <weiwan@google.com>
+Signed-off-by: Martin KaFai Lau <kafai@fb.com>
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/ipv6/route.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index 7c8365797d14..e3d6fae5a4fa 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -772,6 +772,7 @@ static struct rt6_info *rt6_select(struct net *net, struct fib6_node *fn,
+ 	struct rt6_info *leaf = fn->leaf;
+ 	struct rt6_info *match, *rt0;
+ 	bool do_rr = false;
++	int key_plen;
+ 
+ 	if (!leaf)
+ 		return net->ipv6.ip6_null_entry;
+@@ -780,6 +781,19 @@ static struct rt6_info *rt6_select(struct net *net, struct fib6_node *fn,
+ 	if (!rt0)
+ 		fn->rr_ptr = rt0 = leaf;
+ 
++	/* Double check to make sure fn is not an intermediate node
++	 * and fn->leaf does not points to its child's leaf
++	 * (This might happen if all routes under fn are deleted from
++	 * the tree and fib6_repair_tree() is called on the node.)
++	 */
++	key_plen = rt0->rt6i_dst.plen;
++#ifdef CONFIG_IPV6_SUBTREES
++	if (rt0->rt6i_src.plen)
++		key_plen = rt0->rt6i_src.plen;
++#endif
++	if (fn->fn_bit != key_plen)
++		return net->ipv6.ip6_null_entry;
++
+ 	match = find_rr_leaf(fn, leaf, rt0, rt0->rt6i_metric, oif, strict,
+ 			     &do_rr);
+ 
+-- 
+2.11.0
+
