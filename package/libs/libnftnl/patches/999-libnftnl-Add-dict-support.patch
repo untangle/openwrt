@@ -1,22 +1,22 @@
-From 12743f35912af7db7f477e9e44dbeaec549d9883 Mon Sep 17 00:00:00 2001
+From 31df758e1c860b194785b36567b5520de89489f6 Mon Sep 17 00:00:00 2001
 From: Brett Mastbergen <bmastbergen@untangle.com>
 Date: Mon, 25 Jun 2018 10:55:14 -0400
-Subject: [PATCH 2/2] libnftnl: Add dict support
+Subject: [PATCH] libnftnl: Add dict support
 
 ---
- include/libnftnl/expr.h             |  12 +
- include/linux/netfilter/nf_tables.h |  16 ++
+ include/libnftnl/expr.h             |  13 +
+ include/linux/netfilter/nf_tables.h |  17 ++
  src/Makefile.am                     |   1 +
- src/expr/dict.c                     | 434 ++++++++++++++++++++++++++++++++++++
+ src/expr/dict.c                     | 465 ++++++++++++++++++++++++++++++++++++
  src/expr_ops.c                      |   2 +
- 5 files changed, 465 insertions(+)
+ 5 files changed, 498 insertions(+)
  create mode 100644 src/expr/dict.c
 
 diff --git a/include/libnftnl/expr.h b/include/libnftnl/expr.h
-index 219104e..f5a79d7 100644
+index 219104e..f21d669 100644
 --- a/include/libnftnl/expr.h
 +++ b/include/libnftnl/expr.h
-@@ -203,6 +203,18 @@ enum {
+@@ -203,6 +203,19 @@ enum {
  };
  
  enum {
@@ -29,6 +29,7 @@ index 219104e..f5a79d7 100644
 +	NFTNL_EXPR_DICT_LEN,
 +	NFTNL_EXPR_DICT_SIZE,
 +	NFTNL_EXPR_DICT_SET,
++	NFTNL_EXPR_DICT_FLUSH,
 +};
 +
 +enum {
@@ -36,10 +37,10 @@ index 219104e..f5a79d7 100644
  	NFTNL_EXPR_QUEUE_TOTAL,
  	NFTNL_EXPR_QUEUE_FLAGS,
 diff --git a/include/linux/netfilter/nf_tables.h b/include/linux/netfilter/nf_tables.h
-index 4d8eea4..b2e3528 100644
+index 4d8eea4..3b2e77f 100644
 --- a/include/linux/netfilter/nf_tables.h
 +++ b/include/linux/netfilter/nf_tables.h
-@@ -1533,4 +1533,20 @@ enum nft_ng_types {
+@@ -1533,4 +1533,21 @@ enum nft_ng_types {
  };
  #define NFT_NG_MAX	(__NFT_NG_MAX - 1)
  
@@ -54,6 +55,7 @@ index 4d8eea4..b2e3528 100644
 +	NFTA_DICT_LEN,
 +	NFTA_DICT_SIZE,
 +	NFTA_DICT_SET,
++	NFTA_DICT_FLUSH,
 +	__NFTA_DICT_MAX,
 +};
 +
@@ -74,10 +76,10 @@ index c66a257..731c6f2 100644
  		      expr/immediate.c	\
 diff --git a/src/expr/dict.c b/src/expr/dict.c
 new file mode 100644
-index 0000000..fb3a127
+index 0000000..4b041ee
 --- /dev/null
 +++ b/src/expr/dict.c
-@@ -0,0 +1,434 @@
+@@ -0,0 +1,465 @@
 +#include <stdio.h>
 +#include <stdint.h>
 +#include <string.h>
@@ -100,6 +102,7 @@ index 0000000..fb3a127
 +	unsigned int		len;
 +	unsigned int		size;
 +	enum nft_registers	set;
++	unsigned int		flush;
 +};
 +
 +static int nftnl_expr_dict_set(struct nftnl_expr *e, uint16_t type,
@@ -140,6 +143,9 @@ index 0000000..fb3a127
 +	case NFTNL_EXPR_DICT_SET:
 +		dict->set = *((uint32_t *)data);
 +		break;
++	case NFTNL_EXPR_DICT_FLUSH:
++		dict->flush = *((uint32_t *)data);
++		break;
 +	}
 +	return 0;
 +}
@@ -178,6 +184,9 @@ index 0000000..fb3a127
 +	case NFTNL_EXPR_DICT_SET:
 +		*data_len = sizeof(dict->set);
 +		return &dict->set;
++	case NFTNL_EXPR_DICT_FLUSH:
++		*data_len = sizeof(dict->flush);
++		return &dict->flush;
 +	}
 +	return NULL;
 +}
@@ -227,6 +236,10 @@ index 0000000..fb3a127
 +		if (mnl_attr_validate(attr, MNL_TYPE_U32) < 0)
 +			abi_breakage();
 +		break;
++	case NFTNL_EXPR_DICT_FLUSH:
++		if (mnl_attr_validate(attr, MNL_TYPE_U32) < 0)
++			abi_breakage();
++		break;
 +	}
 +
 +	tb[type] = attr;
@@ -264,6 +277,9 @@ index 0000000..fb3a127
 +
 +	if (e->flags & (1 << NFTNL_EXPR_DICT_SET))
 +		mnl_attr_put_u32(nlh, NFTNL_EXPR_DICT_SET, htonl(dict->set));
++
++	if (e->flags & (1 << NFTNL_EXPR_DICT_FLUSH))
++		mnl_attr_put_u32(nlh, NFTNL_EXPR_DICT_FLUSH, htonl(dict->flush));
 +}
 +
 +static int
@@ -335,6 +351,11 @@ index 0000000..fb3a127
 +		e->flags |= (1 << NFTNL_EXPR_DICT_SET);
 +	}
 +
++	if (tb[NFTNL_EXPR_DICT_FLUSH]) {
++		dict->flush = ntohl(mnl_attr_get_u32(tb[NFTNL_EXPR_DICT_FLUSH]));
++		e->flags |= (1 << NFTNL_EXPR_DICT_FLUSH);
++	}
++
 +	return 0;
 +}
 +
@@ -343,7 +364,7 @@ index 0000000..fb3a127
 +{
 +#ifdef JSON_PARSING
 +	const char *field, *value, *table;
-+	uint32_t sreg, dreg, type, len, size, set;
++	uint32_t sreg, dreg, type, len, size, set, flush;
 +
 +	if (nftnl_jansson_parse_val(root, "sreg", NFTNL_TYPE_U32,
 +				    &sreg, err) == 0)
@@ -380,6 +401,10 @@ index 0000000..fb3a127
 +	if (nftnl_jansson_parse_val(root, "set", NFTNL_TYPE_U32,
 +				    &set, err) == 0)
 +		nftnl_expr_set_u32(e, NFTNL_EXPR_DICT_SET, set);
++
++	if (nftnl_jansson_parse_val(root, "flush", NFTNL_TYPE_U32,
++				    &set, err) == 0)
++		nftnl_expr_set_u32(e, NFTNL_EXPR_DICT_FLUSH, flush);
 +
 +	return 0;
 +#else
@@ -427,6 +452,11 @@ index 0000000..fb3a127
 +		SNPRINTF_BUFFER_SIZE(ret, remain, offset);
 +	}
 +
++	if (e->flags & (1 << NFTNL_EXPR_DICT_FLUSH)) {
++		ret = snprintf(buf + offset, remain, "flush");
++		SNPRINTF_BUFFER_SIZE(ret, remain, offset);
++	}
++
 +	return offset;
 +}
 +
@@ -463,6 +493,9 @@ index 0000000..fb3a127
 +	if (e->flags & (1 << NFTNL_EXPR_DICT_SET))
 +		nftnl_buf_u32(&b, type, dict->set, SET);
 +
++	if (e->flags & (1 << NFTNL_EXPR_DICT_FLUSH))
++		nftnl_buf_u32(&b, type, dict->flush, FLUSH);
++
 +	return nftnl_buf_done(&b);
 +}
 +
@@ -496,7 +529,7 @@ index 0000000..fb3a127
 +{
 +	struct nftnl_expr_dict *l1 = nftnl_expr_data(e1);
 +	struct nftnl_expr_dict *l2 = nftnl_expr_data(e2);
-+	return (l1->sreg == l2->sreg) && (l1->dreg == l2->dreg) && (l1->type == l2->type) && (l1->size == l2->size) && !strcmp(l1->table, l2->table) && !strcmp(l1->field, l2->field) && !strcmp(l1->value, l2->value) && (l1->set == l2->set);
++	return (l1->sreg == l2->sreg) && (l1->dreg == l2->dreg) && (l1->type == l2->type) && (l1->size == l2->size) && !strcmp(l1->table, l2->table) && !strcmp(l1->field, l2->field) && !strcmp(l1->value, l2->value) && (l1->set == l2->set) && (l1->flush == l2->flush);
 +}
 +
 +struct expr_ops expr_ops_dict = {
