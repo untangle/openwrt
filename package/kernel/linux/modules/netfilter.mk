@@ -1051,3 +1051,15 @@ define KernelPackage/nft-nat6
 endef
 
 $(eval $(call KernelPackage,nft-nat6))
+
+
+define KernelPackage/nft-fib
+  SUBMENU:=$(NF_MENU)
+  TITLE:=Netfilter nf_tables fib support
+  DEPENDS:=+kmod-nft-core
+  FILES:=$(foreach mod,$(NFT_FIB-m),$(LINUX_DIR)/net/$(mod).ko)
+  AUTOLOAD:=$(call AutoProbe,$(notdir $(NFT_FIB-m)))
+  KCONFIG:=$(KCONFIG_NFT_FIB)
+endef
+
+$(eval $(call KernelPackage,nft-fib))
