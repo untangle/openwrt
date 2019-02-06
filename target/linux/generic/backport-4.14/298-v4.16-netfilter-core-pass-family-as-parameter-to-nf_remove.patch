@@ -1,4 +1,4 @@
-From 85512044511adcfaf991eba76304d7877b952562 Mon Sep 17 00:00:00 2001
+From 30259408118f550f5969fda19c0d67020d21eda8 Mon Sep 17 00:00:00 2001
 From: Pablo Neira Ayuso <pablo@netfilter.org>
 Date: Sat, 9 Dec 2017 15:26:37 +0100
 Subject: [PATCH 10/11] netfilter: core: pass family as parameter to
@@ -11,11 +11,9 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
  net/netfilter/core.c | 10 +++++-----
  1 file changed, 5 insertions(+), 5 deletions(-)
 
-diff --git a/net/netfilter/core.c b/net/netfilter/core.c
-index b9038b20b556..800c125eb82e 100644
 --- a/net/netfilter/core.c
 +++ b/net/netfilter/core.c
-@@ -348,7 +348,7 @@ EXPORT_SYMBOL(nf_register_net_hook);
+@@ -365,7 +365,7 @@ EXPORT_SYMBOL(nf_register_net_hook);
   * Therefore replace the to-be-removed hook with a dummy hook.
   */
  static void nf_remove_net_hook(struct nf_hook_entries *old,
@@ -24,7 +22,7 @@ index b9038b20b556..800c125eb82e 100644
  {
  	struct nf_hook_ops **orig_ops;
  	bool found = false;
-@@ -366,14 +366,14 @@ static void nf_remove_net_hook(struct nf_hook_entries *old,
+@@ -383,14 +383,14 @@ static void nf_remove_net_hook(struct nf
  
  	if (found) {
  #ifdef CONFIG_NETFILTER_INGRESS
@@ -42,7 +40,7 @@ index b9038b20b556..800c125eb82e 100644
  	}
  }
  
-@@ -394,7 +394,7 @@ void nf_unregister_net_hook(struct net *net, const struct nf_hook_ops *reg)
+@@ -411,7 +411,7 @@ void nf_unregister_net_hook(struct net *
  		return;
  	}
  
@@ -51,6 +49,3 @@ index b9038b20b556..800c125eb82e 100644
  
  	p = __nf_hook_entries_try_shrink(pp);
  	mutex_unlock(&nf_hook_mutex);
--- 
-2.11.0
-

@@ -1,4 +1,4 @@
-From bc44598233d543f1b5acd1697b017c93ee4711be Mon Sep 17 00:00:00 2001
+From 8c873e2199700c2de7dbd5eedb9d90d5f109462b Mon Sep 17 00:00:00 2001
 From: Florian Westphal <fw@strlen.de>
 Date: Fri, 1 Dec 2017 00:21:04 +0100
 Subject: [PATCH 04/11] netfilter: core: free hooks with call_rcu
@@ -29,11 +29,9 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
  net/netfilter/core.c      | 34 ++++++++++++++++++++++++++++------
  2 files changed, 43 insertions(+), 10 deletions(-)
 
-diff --git a/include/linux/netfilter.h b/include/linux/netfilter.h
-index 1aed7c6f2a1d..9b16dee7f9e2 100644
 --- a/include/linux/netfilter.h
 +++ b/include/linux/netfilter.h
-@@ -78,17 +78,28 @@ struct nf_hook_entry {
+@@ -77,17 +77,28 @@ struct nf_hook_entry {
  	void				*priv;
  };
  
@@ -66,11 +64,9 @@ index 1aed7c6f2a1d..9b16dee7f9e2 100644
  	 */
  };
  
-diff --git a/net/netfilter/core.c b/net/netfilter/core.c
-index cc26f9a729f3..6962eb600b3f 100644
 --- a/net/netfilter/core.c
 +++ b/net/netfilter/core.c
-@@ -51,7 +51,8 @@ static struct nf_hook_entries *allocate_hook_entries_size(u16 num)
+@@ -74,7 +74,8 @@ static struct nf_hook_entries *allocate_
  	struct nf_hook_entries *e;
  	size_t alloc = sizeof(*e) +
  		       sizeof(struct nf_hook_entry) * num +
@@ -80,7 +76,7 @@ index cc26f9a729f3..6962eb600b3f 100644
  
  	if (num == 0)
  		return NULL;
-@@ -62,6 +63,30 @@ static struct nf_hook_entries *allocate_hook_entries_size(u16 num)
+@@ -85,6 +86,30 @@ static struct nf_hook_entries *allocate_
  	return e;
  }
  
@@ -111,7 +107,7 @@ index cc26f9a729f3..6962eb600b3f 100644
  static unsigned int accept_all(void *priv,
  			       struct sk_buff *skb,
  			       const struct nf_hook_state *state)
-@@ -274,9 +299,8 @@ int nf_register_net_hook(struct net *net, const struct nf_hook_ops *reg)
+@@ -291,9 +316,8 @@ int nf_register_net_hook(struct net *net
  #ifdef HAVE_JUMP_LABEL
  	static_key_slow_inc(&nf_hooks_needed[reg->pf][reg->hooknum]);
  #endif
@@ -122,7 +118,7 @@ index cc26f9a729f3..6962eb600b3f 100644
  	return 0;
  }
  EXPORT_SYMBOL(nf_register_net_hook);
-@@ -344,10 +368,8 @@ void nf_unregister_net_hook(struct net *net, const struct nf_hook_ops *reg)
+@@ -361,10 +385,8 @@ void nf_unregister_net_hook(struct net *
  	if (!p)
  		return;
  
@@ -134,6 +130,3 @@ index cc26f9a729f3..6962eb600b3f 100644
  }
  EXPORT_SYMBOL(nf_unregister_net_hook);
  
--- 
-2.11.0
-

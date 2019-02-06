@@ -1,4 +1,4 @@
-From 406b0b99580448ee0818629e45d6d2fb39217f78 Mon Sep 17 00:00:00 2001
+From 4e645b47c4f000a503b9c90163ad905786b9bc1d Mon Sep 17 00:00:00 2001
 From: Florian Westphal <fw@strlen.de>
 Date: Fri, 1 Dec 2017 00:21:02 +0100
 Subject: [PATCH 02/11] netfilter: core: make nf_unregister_net_hooks simple
@@ -20,18 +20,17 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
  net/netfilter/core.c | 59 +++-------------------------------------------------
  1 file changed, 3 insertions(+), 56 deletions(-)
 
-diff --git a/net/netfilter/core.c b/net/netfilter/core.c
-index 0e22e406e9db..4ff77d8227bf 100644
 --- a/net/netfilter/core.c
 +++ b/net/netfilter/core.c
-@@ -378,63 +378,10 @@ EXPORT_SYMBOL(nf_register_net_hooks);
+@@ -395,63 +395,10 @@ EXPORT_SYMBOL(nf_register_net_hooks);
  void nf_unregister_net_hooks(struct net *net, const struct nf_hook_ops *reg,
  			     unsigned int hookcount)
  {
 -	struct nf_hook_entries *to_free[16], *p;
 -	struct nf_hook_entries __rcu **pp;
 -	unsigned int i, j, n;
--
++	unsigned int i;
+ 
 -	mutex_lock(&nf_hook_mutex);
 -	for (i = 0; i < hookcount; i++) {
 -		pp = nf_hook_entry_head(net, &reg[i]);
@@ -81,8 +80,7 @@ index 0e22e406e9db..4ff77d8227bf 100644
 -			for (i = 0; i < j; i++)
 -				kvfree(to_free[i]);
 -		}
-+	unsigned int i;
- 
+-
 -		reg += n;
 -		hookcount -= n;
 -	} while (hookcount > 0);
@@ -91,6 +89,3 @@ index 0e22e406e9db..4ff77d8227bf 100644
  }
  EXPORT_SYMBOL(nf_unregister_net_hooks);
  
--- 
-2.11.0
-

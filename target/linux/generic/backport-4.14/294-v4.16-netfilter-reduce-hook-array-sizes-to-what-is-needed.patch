@@ -1,4 +1,4 @@
-From 6ca9b83933cd3ae254adef76d9a10dae99864d7c Mon Sep 17 00:00:00 2001
+From ef57170bbfdd6958281011332b1fd237712f69f0 Mon Sep 17 00:00:00 2001
 From: Florian Westphal <fw@strlen.de>
 Date: Thu, 7 Dec 2017 16:28:24 +0100
 Subject: [PATCH 06/11] netfilter: reduce hook array sizes to what is needed
@@ -18,8 +18,6 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
  net/netfilter/core.c          | 24 +++++++++++++++++-------
  2 files changed, 22 insertions(+), 12 deletions(-)
 
-diff --git a/include/net/netns/netfilter.h b/include/net/netns/netfilter.h
-index b39c563c2fce..8f756a4b9205 100644
 --- a/include/net/netns/netfilter.h
 +++ b/include/net/netns/netfilter.h
 @@ -17,11 +17,11 @@ struct netns_nf {
@@ -39,11 +37,9 @@ index b39c563c2fce..8f756a4b9205 100644
  #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV4)
  	bool			defrag_ipv4;
  #endif
-diff --git a/net/netfilter/core.c b/net/netfilter/core.c
-index f6547459024d..75497fad3482 100644
 --- a/net/netfilter/core.c
 +++ b/net/netfilter/core.c
-@@ -251,14 +251,24 @@ static struct nf_hook_entries __rcu **nf_hook_entry_head(struct net *net, const
+@@ -268,14 +268,24 @@ static struct nf_hook_entries __rcu **nf
  	case NFPROTO_NETDEV:
  		break;
  	case NFPROTO_ARP:
@@ -68,7 +64,7 @@ index f6547459024d..75497fad3482 100644
  		return net->nf.hooks_decnet + reg->hooknum;
  	default:
  		WARN_ON_ONCE(1);
-@@ -532,21 +542,21 @@ void (*nf_nat_decode_session_hook)(struct sk_buff *, struct flowi *);
+@@ -549,21 +559,21 @@ void (*nf_nat_decode_session_hook)(struc
  EXPORT_SYMBOL(nf_nat_decode_session_hook);
  #endif
  
@@ -97,6 +93,3 @@ index f6547459024d..75497fad3482 100644
  
  #ifdef CONFIG_PROC_FS
  	net->nf.proc_netfilter = proc_net_mkdir(net, "netfilter",
--- 
-2.11.0
-
