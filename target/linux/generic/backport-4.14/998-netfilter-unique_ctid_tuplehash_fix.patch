@@ -1,0 +1,13 @@
+diff -urN linux-4.14.131.orig/net/netfilter/nf_conntrack_core.c linux-4.14.131/net/netfilter/nf_conntrack_core.c
+--- linux-4.14.131.orig/net/netfilter/nf_conntrack_core.c	2019-08-06 11:47:21.580179001 -0700
++++ linux-4.14.131/net/netfilter/nf_conntrack_core.c	2019-08-06 14:02:58.899256869 -0700
+@@ -320,7 +320,8 @@
+ 	a = (unsigned long)ct;
+ 	b = (unsigned long)ct->master ^ net_hash_mix(nf_ct_net(ct));
+ 	c = (unsigned long)ct->ext;
+-	d = (unsigned long)siphash(&ct->tuplehash, sizeof(ct->tuplehash),
++	d = (unsigned long)siphash(&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple,
++				   sizeof(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple),
+ 				   &ct_id_seed);
+ #ifdef CONFIG_64BIT
+ 	return siphash_4u64((u64)a, (u64)b, (u64)c, (u64)d, &ct_id_seed);
