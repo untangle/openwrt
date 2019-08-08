@@ -1,8 +1,26 @@
 diff --git a/net/netfilter/nf_conntrack_core.c b/net/netfilter/nf_conntrack_core.c
-index ab73c5f..dad6868 100644
+index ab73c5f..f86625f 100644
 --- a/net/netfilter/nf_conntrack_core.c
 +++ b/net/netfilter/nf_conntrack_core.c
-@@ -318,9 +318,10 @@ u32 nf_ct_get_id(const struct nf_conn *ct)
+@@ -302,13 +302,12 @@ EXPORT_SYMBOL_GPL(nf_ct_invert_tuple);
+  * table location, we assume id gets exposed to userspace.
+  *
+  * Following nf_conn items do not change throughout lifetime
+- * of the nf_conn after it has been committed to main hash table:
++ * of the nf_conn:
+  *
+  * 1. nf_conn address
+- * 2. nf_conn->ext address
+- * 3. nf_conn->master address (normally NULL)
+- * 4. tuple
+- * 5. the associated net namespace
++ * 2. nf_conn->master address (normally NULL)
++ * 3. the associated net namespace
++ * 4. the original direction tuple
+  */
+ u32 nf_ct_get_id(const struct nf_conn *ct)
+ {
+@@ -318,9 +317,10 @@ u32 nf_ct_get_id(const struct nf_conn *ct)
  	net_get_random_once(&ct_id_seed, sizeof(ct_id_seed));
  
  	a = (unsigned long)ct;
