@@ -74,6 +74,7 @@ ar71xx_setup_interfaces()
 	cap4200ag|\
 	cf-e380ac-v1|\
 	cf-e380ac-v2|\
+	cpe210-v2|\
 	dr342|\
 	eap120|\
 	eap300v2|\
@@ -112,6 +113,7 @@ ar71xx_setup_interfaces()
 	rb-sxt2n|\
 	rb-sxt5n|\
 	rb-wap-2nd|\
+	rb-wapr-2nd|\
 	rb-wapg-5hact2hnd|\
 	re355|\
 	re450|\
@@ -155,7 +157,6 @@ ar71xx_setup_interfaces()
 	a60|\
 	alfa-ap96|\
 	alfa-nx|\
-	archer-c25-v1|\
 	dr344|\
 	gl-ar150|\
 	gl-ar300m|\
@@ -177,14 +178,6 @@ ar71xx_setup_interfaces()
 	wpe72|\
 	wrtnode2q)
 		ucidef_set_interfaces_lan_wan "eth1" "eth0"
-		;;
-	rb-750-r2|\
-	rb-750p-pbr2|\
-	rb-750up-r2|\
-	rb-951ui-2nd)
-		ucidef_set_interfaces_lan_wan "eth1.1" "eth0"
-		ucidef_add_switch "switch0" \
-			"0@eth1" "1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1"
 		;;
 	all0258n|\
 	all0315n|\
@@ -243,6 +236,15 @@ ar71xx_setup_interfaces()
 		ucidef_set_interfaces_lan_wan "eth1.1" "eth0.2"
 		ucidef_add_switch "switch0" \
 			"0@eth1" "2:lan" "3:lan" "4:lan" "5:lan" "6@eth0" "1:wan"
+		;;
+	archer-c25-v1|\
+	rb-750-r2|\
+	rb-750p-pbr2|\
+	rb-750up-r2|\
+	rb-951ui-2nd)
+		ucidef_set_interfaces_lan_wan "eth1.1" "eth0"
+		ucidef_add_switch "switch0" \
+			"0@eth1" "1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1"
 		;;
 	archer-c58-v1|\
 	archer-c59-v1|\
@@ -313,6 +315,10 @@ ar71xx_setup_interfaces()
 	dap-2695-a1)
 		ucidef_add_switch "switch0" "0@eth0" "2:lan" "3:wan" "6@eth1"
 		;;
+	rb-931-2nd)
+		ucidef_add_switch "switch0" \
+			"0@eth0" "1:lan:3" "2:lan:2" "3:wan:1"
+	;;
 	rb-941-2nd)
 		ucidef_add_switch "switch0" \
 			"0@eth0" "1:lan:4" "2:lan:3" "3:lan:2" "4:wan:1"
@@ -379,10 +385,16 @@ ar71xx_setup_interfaces()
 		ucidef_add_switch_attr "switch0" "enable" "false"
 		;;
 	e1700ac-v2|\
+	e750g-v8|\
 	unifiac-pro|\
 	xd3200)
 		ucidef_add_switch "switch0" \
 			"0@eth0" "2:lan" "3:wan"
+		;;
+	e558-v2)
+		ucidef_set_interfaces_lan_wan "eth1.1" "eth0.2"
+		ucidef_add_switch "switch0" \
+			"0@eth1" "4:lan" "5:lan" "6@eth0"  "3:wan"
 		;;
 	ebr-2310-c1)
 		ucidef_set_interfaces_lan_wan "eth0.1" "eth1"
@@ -404,7 +416,7 @@ ar71xx_setup_interfaces()
 			"0@eth0" "1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1" "5:wan"
 		;;
 	ew-balin)
-		ucidef_set_interface "usb2" ifname "usb0" protocol "static"
+		ucidef_set_interface_raw "usb2" "usb0" "static"
 		ucidef_add_switch "switch0" \
 			"0@eth0" "5:lan:4" "4:lan:5" "3:wan"
 		;;
@@ -475,7 +487,7 @@ ar71xx_setup_interfaces()
 		;;
 	tellstick-znet-lite)
 		ucidef_set_interface_wan "eth0"
-		ucidef_set_interface "wlan" ifname "wlan0" protocol "dhcp"
+		ucidef_set_interface_raw "wlan" "wlan0" "dhcp"
 		;;
 	tl-mr3420-v2|\
 	tl-wr841n-v8|\
@@ -487,6 +499,7 @@ ar71xx_setup_interfaces()
 			"0@eth1" "1:lan:4" "2:lan:1" "3:lan:2" "4:lan:3"
 		;;
 	archer-c7-v4|\
+	archer-c7-v5|\
 	tl-wdr4300|\
 	tl-wr1041n-v2)
 		ucidef_add_switch "switch0" \
@@ -506,7 +519,7 @@ ar71xx_setup_interfaces()
 		;;
 	tl-wr841n-v1|\
 	tl-wr941nd)
-		ucidef_set_interface "eth" ifname "eth0"
+		ucidef_set_interface_raw "eth" "eth0"
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" "wan"
 		;;
 	tl-wr741nd|\
@@ -572,6 +585,14 @@ ar71xx_setup_macs()
 	local wan_mac=""
 
 	case $board in
+	archer-c7-v4)
+		base_mac=$(mtd_get_mac_binary config 8)
+		wan_mac=$(macaddr_add "$base_mac" 1)
+		;;
+	archer-c7-v5)
+		base_mac=$(mtd_get_mac_binary info 8)
+		wan_mac=$(macaddr_add "$base_mac" 1)
+		;;
 	dgl-5500-a1|\
 	dir-825-c1)
 		wan_mac=$(mtd_get_mac_ascii nvram "wan_mac")
@@ -583,6 +604,13 @@ ar71xx_setup_macs()
 		lan_mac=$(mtd_get_mac_binary caldata 0)
 		wan_mac=$(mtd_get_mac_binary caldata 6)
 		;;
+	dir-869-a1|\
+	mynet-n750)
+		wan_mac=$(mtd_get_mac_ascii devdata "wanmac")
+		;;
+	esr900)
+		wan_mac=$(mtd_get_mac_ascii u-boot-env "wanaddr")
+		;;
 	fritz300e)
 		lan_mac=$(fritz_tffs -n maca -i $(find_mtd_part "tffs (1)"))
 		;;
@@ -590,13 +618,6 @@ ar71xx_setup_macs()
 	tl-wr1043nd-v4)
 		lan_mac=$(mtd_get_mac_binary product-info 8)
 		wan_mac=$(macaddr_add "$lan_mac" 1)
-		;;
-	esr900)
-		wan_mac=$(mtd_get_mac_ascii u-boot-env "wanaddr")
-		;;
-	dir-869-a1|\
-	mynet-n750)
-		wan_mac=$(mtd_get_mac_ascii devdata "wanmac")
 		;;
 	wlr8100)
 		lan_mac=$(mtd_get_mac_ascii u-boot-env "ethaddr")

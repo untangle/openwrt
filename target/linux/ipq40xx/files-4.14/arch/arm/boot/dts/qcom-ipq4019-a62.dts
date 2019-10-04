@@ -212,16 +212,18 @@
 	perst-gpio = <&tlmm 38 GPIO_ACTIVE_LOW>;
 	wake-gpio = <&tlmm 50 GPIO_ACTIVE_LOW>;
 
-	bridge@0,0 {
-		reg = <0x00000000 0 0 0 0>;
-		#address-cells = <3>;
+	pcie@0 {
+		reg = <0 0 0 0 0>;
+		#interrupt-cells = <1>;
 		#size-cells = <2>;
-		ranges;
+		#address-cells = <3>;
+		device_type = "pci";
 
-		wifi2: wifi@0,0 {
+		ath10k@0,0 {
 			compatible = "qcom,ath10k";
 			status = "okay";
-			reg = <0x00010000 0 0 0 0>;
+			reg = <0 0 0 0 0>;
+			device_type = "pci";
 			qcom,ath10k-calibration-variant = "OM-A62";
 		};
 	};

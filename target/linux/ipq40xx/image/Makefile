@@ -80,12 +80,12 @@ define Device/avm_fritzbox-4040
 	BOARD_NAME := fritz4040
 	DEVICE_TITLE := AVM Fritz!Box 4040
 	IMAGE_SIZE := 29753344
-	UBOOT_PATH := $$(BIN_DIR)/u-boot-fritz4040/uboot-fritz4040.bin
+	UBOOT_PATH := $(STAGING_DIR_IMAGE)/uboot-fritz4040.bin
 	UBOOT_PARTITION_SIZE := 524288
 	IMAGES = eva.bin sysupgrade.bin
 	IMAGE/eva.bin := append-uboot | pad-to $$$$(UBOOT_PARTITION_SIZE) | append-kernel | append-rootfs | pad-rootfs
 	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
-	DEVICE_PACKAGES := fritz-tffs fritz-caldata u-boot-fritz4040
+	DEVICE_PACKAGES := fritz-tffs fritz-caldata
 endef
 TARGET_DEVICES += avm_fritzbox-4040
 
@@ -122,7 +122,7 @@ define Device/meraki_mr33
 	PAGESIZE := 2048
 	DEVICE_TITLE := Cisco Meraki MR33
 	IMAGES = sysupgrade.bin
-	DEVICE_PACKAGES := -swconfig ath10k-firmware-qca9887
+	DEVICE_PACKAGES := -swconfig ath10k-firmware-qca9887-ct
 endef
 TARGET_DEVICES += meraki_mr33
 
@@ -174,7 +174,7 @@ define Device/openmesh_a62
 	IMAGES = factory.bin sysupgrade.bin
 	IMAGE/factory.bin := append-rootfs | pad-rootfs | openmesh-image ce_type=A62
 	IMAGE/sysupgrade.bin/squashfs := append-rootfs | pad-rootfs | sysupgrade-tar rootfs=$$$$@ | append-metadata
-	DEVICE_PACKAGES := ath10k-firmware-qca9888 uboot-envtools
+	DEVICE_PACKAGES := ath10k-firmware-qca9888-ct uboot-envtools
 endef
 
 TARGET_DEVICES += openmesh_a62

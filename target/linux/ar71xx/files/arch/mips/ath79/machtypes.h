@@ -52,6 +52,7 @@ enum ath79_mach_type {
 	ATH79_MACH_ARCHER_C7,			/* TP-LINK Archer C7 board */
 	ATH79_MACH_ARCHER_C7_V2,		/* TP-LINK Archer C7 V2 board */
 	ATH79_MACH_ARCHER_C7_V4,		/* TP-LINK Archer C7 V4 board */
+	ATH79_MACH_ARCHER_C7_V5,		/* TP-LINK Archer C7 V5 board */
 	ATH79_MACH_ARDUINO_YUN,			/* Yun */
 	ATH79_MACH_AW_NR580,			/* AzureWave AW-NR580 */
 	ATH79_MACH_BHR_4GRV2,			/* Buffalo BHR-4GRV2 */
@@ -72,7 +73,8 @@ enum ath79_mach_type {
 	ATH79_MACH_CF_E385AC,			/* COMFAST CF-E385AC */
 	ATH79_MACH_CF_E520N,			/* COMFAST CF-E520N */
 	ATH79_MACH_CF_E530N,			/* COMFAST CF-E530N */
-	ATH79_MACH_CPE210,			/* TP-LINK CPE210 */
+	ATH79_MACH_CPE210,			/* TP-LINK CPE210 v1 */
+	ATH79_MACH_CPE210_V2,			/* TP-LINK CPE210 v2 */
 	ATH79_MACH_CPE505N,			/* P&W CPE505N */
 	ATH79_MACH_CPE510,			/* TP-LINK CPE510 */
 	ATH79_MACH_CPE830,			/* YunCore CPE830 */
@@ -103,8 +105,11 @@ enum ath79_mach_type {
 	ATH79_MACH_DR531,			/* Wallys DR531 */
 	ATH79_MACH_DRAGINO2,			/* Dragino Version 2 */
 	ATH79_MACH_E1700AC_V2,			/* Qxwlan E1700AC v2 */
+	ATH79_MACH_E558_V2,			/* Qxwlan E558 v2 */
 	ATH79_MACH_E600G_V2,			/* Qxwlan E600G v2 */
 	ATH79_MACH_E600GAC_V2,			/* Qxwlan E600GAC v2 */
+	ATH79_MACH_E750A_V4,			/* Qxwlan E750A v4 */
+	ATH79_MACH_E750G_V8,			/* Qxwlan E750G v8 */
 	ATH79_MACH_EAP120,			/* TP-LINK EAP120 */
 	ATH79_MACH_EAP300V2,			/* EnGenius EAP300 v2 */
 	ATH79_MACH_EAP7660D,			/* Senao EAP7660D */
@@ -209,6 +214,7 @@ enum ath79_mach_type {
 	ATH79_MACH_RB_751G,			/* Mikrotik RouterBOARD 751G */
 	ATH79_MACH_RB_911L,			/* Mikrotik RouterBOARD 911-2Hn/911-5Hn boards */
 	ATH79_MACH_RB_922GS,			/* Mikrotik RouterBOARD 911/922GS boards */
+	ATH79_MACH_RB_931,			/* MikroTik RouterBOARD 931-2nD */
 	ATH79_MACH_RB_941,			/* MikroTik RouterBOARD 941-2nD */
 	ATH79_MACH_RB_951G,			/* Mikrotik RouterBOARD 951G */
 	ATH79_MACH_RB_951U,			/* Mikrotik RouterBOARD 951Ui-2HnD */
@@ -219,6 +225,7 @@ enum ath79_mach_type {
 	ATH79_MACH_RB_MAP,			/* Mikrotik RouterBOARD mAP2nD */
 	ATH79_MACH_RB_MAPL,			/* Mikrotik RouterBOARD mAP L-2nD */
 	ATH79_MACH_RB_WAP,			/* Mikrotik RouterBOARD wAP2nD */
+	ATH79_MACH_RB_WAPR,			/* Mikrotik RouterBOARD wAPR2nD */
 	ATH79_MACH_RB_WAPAC,			/* Mikrotik RouterBOARD wAPG-5HacT2HnD */
 	ATH79_MACH_RB_SXTLITE2ND,		/* Mikrotik RouterBOARD SXT Lite 2nD */
 	ATH79_MACH_RB_SXTLITE5ND,		/* Mikrotik RouterBOARD SXT Lite 5nD */
@@ -325,7 +332,7 @@ enum ath79_mach_type {
 	ATH79_MACH_UBNT_UAP_PRO,		/* Ubiquiti UniFi AP Pro */
 	ATH79_MACH_UBNT_UNIFI,			/* Ubiquiti Unifi */
 	ATH79_MACH_UBNT_UNIFIAC_LITE,		/* Ubiquiti Unifi AC LITE/LR/MESH */
-	ATH79_MACH_UBNT_UNIFIAC_PRO,		/* Ubiquiti Unifi AC PRO */
+	ATH79_MACH_UBNT_UNIFIAC_PRO,		/* Ubiquiti Unifi AC PRO/MESH PRO */
 	ATH79_MACH_UBNT_UNIFI_OUTDOOR,		/* Ubiquiti UnifiAP Outdoor */
 	ATH79_MACH_UBNT_UNIFI_OUTDOOR_PLUS,	/* Ubiquiti UnifiAP Outdoor+ */
 	ATH79_MACH_UBNT_XM,			/* Ubiquiti Networks XM board rev 1.0 */

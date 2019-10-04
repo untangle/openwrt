@@ -1,4 +1,4 @@
-From ab24412595d0976c898d7bd14720b1eda31822e0 Mon Sep 17 00:00:00 2001
+From b0f38338aef2dae5ade3c16acf713737e3b15a73 Mon Sep 17 00:00:00 2001
 From: Florian Westphal <fw@strlen.de>
 Date: Sun, 3 Dec 2017 00:58:47 +0100
 Subject: [PATCH 05/11] netfilter: reduce size of hook entry point locations
@@ -35,11 +35,9 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
  net/netfilter/nf_queue.c        | 21 +++++++++++++++++++--
  5 files changed, 77 insertions(+), 14 deletions(-)
 
-diff --git a/include/linux/netfilter.h b/include/linux/netfilter.h
-index 9b16dee7f9e2..44908cc09752 100644
 --- a/include/linux/netfilter.h
 +++ b/include/linux/netfilter.h
-@@ -196,7 +196,7 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
+@@ -195,7 +195,7 @@ static inline int nf_hook(u_int8_t pf, u
  			  struct net_device *indev, struct net_device *outdev,
  			  int (*okfn)(struct net *, struct sock *, struct sk_buff *))
  {
@@ -48,7 +46,7 @@ index 9b16dee7f9e2..44908cc09752 100644
  	int ret = 1;
  
  #ifdef HAVE_JUMP_LABEL
-@@ -207,7 +207,27 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
+@@ -206,7 +206,27 @@ static inline int nf_hook(u_int8_t pf, u
  #endif
  
  	rcu_read_lock();
@@ -77,8 +75,6 @@ index 9b16dee7f9e2..44908cc09752 100644
  	if (hook_head) {
  		struct nf_hook_state state;
  
-diff --git a/include/net/netns/netfilter.h b/include/net/netns/netfilter.h
-index cc00af2ac2d7..b39c563c2fce 100644
 --- a/include/net/netns/netfilter.h
 +++ b/include/net/netns/netfilter.h
 @@ -17,7 +17,11 @@ struct netns_nf {
@@ -94,11 +90,9 @@ index cc00af2ac2d7..b39c563c2fce 100644
  #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV4)
  	bool			defrag_ipv4;
  #endif
-diff --git a/net/bridge/br_netfilter_hooks.c b/net/bridge/br_netfilter_hooks.c
-index c2eea1b8737a..27f1d4f2114a 100644
 --- a/net/bridge/br_netfilter_hooks.c
 +++ b/net/bridge/br_netfilter_hooks.c
-@@ -991,7 +991,7 @@ int br_nf_hook_thresh(unsigned int hook, struct net *net,
+@@ -988,7 +988,7 @@ int br_nf_hook_thresh(unsigned int hook,
  	unsigned int i;
  	int ret;
  
@@ -107,11 +101,9 @@ index c2eea1b8737a..27f1d4f2114a 100644
  	if (!e)
  		return okfn(net, sk, skb);
  
-diff --git a/net/netfilter/core.c b/net/netfilter/core.c
-index 6962eb600b3f..f6547459024d 100644
 --- a/net/netfilter/core.c
 +++ b/net/netfilter/core.c
-@@ -247,8 +247,23 @@ static void *__nf_hook_entries_try_shrink(struct nf_hook_entries __rcu **pp)
+@@ -264,8 +264,23 @@ out_assign:
  
  static struct nf_hook_entries __rcu **nf_hook_entry_head(struct net *net, const struct nf_hook_ops *reg)
  {
@@ -137,7 +129,7 @@ index 6962eb600b3f..f6547459024d 100644
  
  #ifdef CONFIG_NETFILTER_INGRESS
  	if (reg->hooknum == NF_NETDEV_INGRESS) {
-@@ -517,14 +532,21 @@ void (*nf_nat_decode_session_hook)(struct sk_buff *, struct flowi *);
+@@ -534,14 +549,21 @@ void (*nf_nat_decode_session_hook)(struc
  EXPORT_SYMBOL(nf_nat_decode_session_hook);
  #endif
  
@@ -165,11 +157,9 @@ index 6962eb600b3f..f6547459024d 100644
  
  #ifdef CONFIG_PROC_FS
  	net->nf.proc_netfilter = proc_net_mkdir(net, "netfilter",
-diff --git a/net/netfilter/nf_queue.c b/net/netfilter/nf_queue.c
-index 1b679db077a0..00643badcf21 100644
 --- a/net/netfilter/nf_queue.c
 +++ b/net/netfilter/nf_queue.c
-@@ -249,6 +249,23 @@ static unsigned int nf_iterate(struct sk_buff *skb,
+@@ -202,6 +202,23 @@ repeat:
  	return NF_ACCEPT;
  }
  
@@ -193,7 +183,7 @@ index 1b679db077a0..00643badcf21 100644
  /* Caller must hold rcu read-side lock */
  void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
  {
-@@ -263,12 +280,12 @@ void nf_reinject(struct nf_queue_entry *entry, unsigned int verdict)
+@@ -217,12 +234,12 @@ void nf_reinject(struct nf_queue_entry *
  	net = entry->state.net;
  	pf = entry->state.pf;
  
@@ -208,6 +198,3 @@ index 1b679db077a0..00643badcf21 100644
  		kfree_skb(skb);
  		kfree(entry);
  		return;
--- 
-2.11.0
-

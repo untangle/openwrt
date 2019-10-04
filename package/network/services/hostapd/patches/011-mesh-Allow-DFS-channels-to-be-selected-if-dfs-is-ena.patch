@@ -1,7 +1,7 @@
-From bbaa6142eadf229334436fdbf51aa65bb819f771 Mon Sep 17 00:00:00 2001
+From ce3e491e445ebea9705e76ac7ee3d4841ace1cad Mon Sep 17 00:00:00 2001
 From: Peter Oh <peter.oh@bowerswilkins.com>
-Date: Tue, 29 May 2018 14:39:15 -0700
-Subject: [PATCH 11/18] mesh: Allow DFS channels to be selected if dfs is
+Date: Tue, 17 Apr 2018 21:55:08 -0700
+Subject: [PATCH 11/16] mesh: Allow DFS channels to be selected if dfs is
  enabled
 
 Note: DFS is assumed to be usable if a country code has been set

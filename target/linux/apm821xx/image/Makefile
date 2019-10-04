@@ -102,13 +102,10 @@ define Device/meraki_mx60
   # otherwise the final image will fail to boot. This is set within the
   # MX60 kernel header definition which is found at
   # ./tools/firmware-utils/src/mkmerakifw.c, line 103~
-  KERNEL_SIZE := 2984k
+  KERNEL_SIZE := 4031k
   IMAGE_SIZE := 1021m
   KERNEL := kernel-bin | gzip | uImage gzip | MerakiAdd-dtb | MerakiNAND
-  KERNEL_INITRAMFS := copy-file $(KDIR)/vmlinux | gzip | uImage gzip | \
-		      check-size $$(KERNEL_SIZE) | \
-		      MerakiAdd-dtb | pad-to 2047k | MerakiAdd-initramfs | \
-		      MerakiNAND
+  KERNEL_INITRAMFS := kernel-bin | gzip | dtb | MuImage-initramfs gzip
   IMAGE/sysupgrade.tar := sysupgrade-tar | append-metadata
   UBINIZE_OPTS := -E 5
   SUPPORTED_DEVICES += mx60
@@ -214,7 +211,11 @@ define Build/hdd-img
 	./mbl_gen_hdd_img.sh $@ $@.boot $(IMAGE_ROOTFS)
 endef
 
-define Device/MyBookLiveDefault
+define Device/wd_mybooklive
+  DEVICE_TITLE := Western Digital My Book Live Series (Single + Duo)
+  DEVICE_PACKAGES := kmod-usb-dwc2 kmod-usb-ledtrig-usbport kmod-usb-storage kmod-fs-vfat wpad-basic
+  DEVICE_DTS := wd-mybooklive
+  SUPPORTED_DEVICES += mbl wd_mybooklive-duo
   IMAGE_SIZE := 48m
   BLOCKSIZE := 1k
   DTB_SIZE := 16384
@@ -228,24 +229,7 @@ define Device/MyBookLiveDefault
   IMAGE/rootfs.img.gz := boot-script | boot-img | hdd-img | gzip | append-metadata
 endef
 
-define Device/wd_mybooklive
-$(Device/MyBookLiveDefault)
-  DEVICE_TITLE := Western Digital My Book Live
-  DEVICE_DTS := wd-mybooklive
-  SUPPORTED_DEVICES += mbl
-endef
-
 TARGET_DEVICES += wd_mybooklive
-
-define Device/wd_mybooklive-duo
-$(Device/MyBookLiveDefault)
-  DEVICE_TITLE := Western Digital My Book Live Duo
-  DEVICE_PACKAGES := kmod-usb-dwc2 kmod-usb-ledtrig-usbport kmod-usb-storage kmod-fs-vfat wpad-mini
-  DEVICE_DTS := wd-mybooklive-duo
-  SUPPORTED_DEVICES += mbl
-endef
-
-TARGET_DEVICES += wd_mybooklive-duo
 
 endif
 

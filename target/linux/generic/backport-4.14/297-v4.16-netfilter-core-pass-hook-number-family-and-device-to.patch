@@ -1,4 +1,4 @@
-From 255348ea0495b1929d9c5915d89c295d54ac48ce Mon Sep 17 00:00:00 2001
+From 62a0fe46e2aaba1812d3cbcae014a41539f9eb09 Mon Sep 17 00:00:00 2001
 From: Pablo Neira Ayuso <pablo@netfilter.org>
 Date: Sat, 9 Dec 2017 15:23:51 +0100
 Subject: [PATCH 09/11] netfilter: core: pass hook number, family and device to
@@ -12,11 +12,9 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
  net/netfilter/core.c | 36 +++++++++++++++++++-----------------
  1 file changed, 19 insertions(+), 17 deletions(-)
 
-diff --git a/net/netfilter/core.c b/net/netfilter/core.c
-index 5ad10b8c3192..b9038b20b556 100644
 --- a/net/netfilter/core.c
 +++ b/net/netfilter/core.c
-@@ -245,36 +245,38 @@ static void *__nf_hook_entries_try_shrink(struct nf_hook_entries __rcu **pp)
+@@ -262,36 +262,38 @@ out_assign:
  	return old;
  }
  
@@ -67,7 +65,7 @@ index 5ad10b8c3192..b9038b20b556 100644
  #endif
  	default:
  		WARN_ON_ONCE(1);
-@@ -282,9 +284,9 @@ static struct nf_hook_entries __rcu **nf_hook_entry_head(struct net *net, const
+@@ -299,9 +301,9 @@ static struct nf_hook_entries __rcu **nf
  	}
  
  #ifdef CONFIG_NETFILTER_INGRESS
@@ -80,7 +78,7 @@ index 5ad10b8c3192..b9038b20b556 100644
  	}
  #endif
  	WARN_ON_ONCE(1);
-@@ -306,7 +308,7 @@ int nf_register_net_hook(struct net *net, const struct nf_hook_ops *reg)
+@@ -323,7 +325,7 @@ int nf_register_net_hook(struct net *net
  			return -EINVAL;
  	}
  
@@ -89,7 +87,7 @@ index 5ad10b8c3192..b9038b20b556 100644
  	if (!pp)
  		return -EINVAL;
  
-@@ -380,7 +382,7 @@ void nf_unregister_net_hook(struct net *net, const struct nf_hook_ops *reg)
+@@ -397,7 +399,7 @@ void nf_unregister_net_hook(struct net *
  	struct nf_hook_entries __rcu **pp;
  	struct nf_hook_entries *p;
  
@@ -98,6 +96,3 @@ index 5ad10b8c3192..b9038b20b556 100644
  	if (!pp)
  		return;
  
--- 
-2.11.0
-

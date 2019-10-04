@@ -168,6 +168,8 @@ dlink,dwr-921-c1)
 	ucidef_set_led_default "sigstrength" "Signal Strength" "$boardname:green:sigstrength" "0"
 	;;
 dir-810l|\
+elecom,wrc-1167ghbk2-s|\
+iodata,wn-ax1167gr|\
 iodata,wn-gx300gr|\
 mzk-750dhp|\
 mzk-dp150n|\
@@ -209,6 +211,7 @@ gl-mt750)
 	;;
 gl-mt300n-v2)
 	set_wifi_led "$boardname:red:wlan"
+	ucidef_set_led_switch "wan" "wan" "$boardname:green:wan" "switch0" "0x1"
 	;;
 hc5661|\
 hc5661a)
@@ -242,6 +245,14 @@ hpm)
 ht-tm02)
 	ucidef_set_led_netdev "eth" "Ethernet" "$boardname:green:lan" "eth0"
 	set_wifi_led "$boardname:blue:wlan"
+	;;
+iodata,wn-ac1167gr)
+	ucidef_set_led_wlan "wlan5g" "WLAN5G" "$boardname:green:wlan5g" "phy0radio"
+	ucidef_set_led_wlan "wlan2g" "WLAN2G" "$boardname:green:wlan2g" "phy1radio"
+	;;
+kimax,u35wf)
+	set_wifi_led "$boardname:blue:wifi"
+	ucidef_set_led_netdev "eth" "ETH" "$boardname:green:eth" "eth0"
 	;;
 kn|\
 nbg-419n2)

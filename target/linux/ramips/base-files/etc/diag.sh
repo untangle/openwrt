@@ -22,11 +22,13 @@ get_status_led() {
 	dch-m225|\
 	dir-860l-b1|\
 	e1700|\
+	elecom,wrc-1167ghbk2-s|\
 	ex2700|\
 	ex3700|\
 	fonera20n|\
 	firewrt|\
 	hg255d|\
+	iodata,wn-ax1167gr|\
 	iodata,wn-gx300gr|\
 	kn|\
 	kn_rc|\
@@ -160,6 +162,7 @@ get_status_led() {
 		status_led="$boardname:blue:power"
 		;;
 	dlink,dap-1522-a1|\
+	phicomm,k2g|\
 	k2p|\
 	m3|\
 	mir3g|\
@@ -193,11 +196,12 @@ get_status_led() {
 	hc5962)
 		status_led="$boardname:white:status"
 		;;
-	linkits7688)
-		status_led="linkit-smart-7688:orange:wifi"
-		;;
+	kimax,u35wf|\
 	m2m)
 		status_led="$boardname:blue:wifi"
+		;;
+	linkits7688)
+		status_led="linkit-smart-7688:orange:wifi"
 		;;
 	gl-mt300n-v2)
 		status_led="$boardname:green:power"
@@ -205,6 +209,9 @@ get_status_led() {
 	m4-4M|\
 	m4-8M)
 		status_led="m4:blue:status"
+		;;
+	mikrotik,rbm33g)
+		status_led="rbm33g:green:usr"
 		;;
 	miwifi-mini|\
 	zte-q7)

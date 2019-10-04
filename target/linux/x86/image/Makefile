@@ -83,6 +83,7 @@ ifneq ($(CONFIG_GRUB_IMAGES),)
 		-e 's#@TIMEOUT@#$(GRUB_TIMEOUT)#g' \
 		-e 's#@ROOT@#$(GRUB_ROOT)#g' \
 		./grub.cfg > $(KDIR)/root.grub/boot/grub/grub.cfg
+	-$(CP) $(STAGING_DIR_ROOT)/boot/. $(KDIR)/root.grub/boot/
 	PADDING="$(CONFIG_TARGET_IMAGES_PAD)" SIGNATURE="$(SIGNATURE)" PATH="$(TARGET_PATH)" $(SCRIPT_DIR)/gen_image_generic.sh \
 		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).img \
 		$(CONFIG_TARGET_KERNEL_PARTSIZE) $(KDIR)/root.grub \
@@ -120,6 +121,7 @@ define Image/Build/iso
 		-e 's#@CMDLINE@#root=/dev/sr0 rootfstype=iso9660 rootwait $(strip $(call Image/cmdline/$(1)) $(BOOTOPTS) $(GRUB_CONSOLE_CMDLINE))#g' \
 		-e 's#@TIMEOUT@#$(GRUB_TIMEOUT)#g' \
 		./grub-iso.cfg > $(KDIR)/root.grub/boot/grub/grub.cfg
+	-$(CP) $(STAGING_DIR_ROOT)/boot/. $(KDIR)/root.grub/boot/
 	mkisofs -R -b boot/grub/eltorito.img -no-emul-boot -boot-info-table \
 		-o $(KDIR)/root.iso $(KDIR)/root.grub $(TARGET_DIR)
 endef
@@ -127,7 +129,7 @@ endef
 ifneq ($(CONFIG_VDI_IMAGES),)
   define Image/Build/vdi
 	rm $(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).vdi || true
-	qemu-img convert -f raw -O vdi \
+	$(STAGING_DIR_HOST)/bin/qemu-img convert -f raw -O vdi \
 		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).img \
 		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).vdi
 	# XXX: VBoxManage insists on setting perms to 0600
@@ -138,9 +140,15 @@ endif
 ifneq ($(CONFIG_VMDK_IMAGES),)
   define Image/Build/vmdk
 	rm $(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).vmdk || true
-	qemu-img convert -f raw -O vmdk \
+	$(STAGING_DIR_HOST)/bin/qemu-img convert -f raw -O vmdk \
 		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).img \
 		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).vmdk
+	#build the ESXI VMDK with 
+	rm $(BIN_DIR)/$(IMG_PREFIX)-combined-$(1)-esxi.vmdk || true
+	rm $(BIN_DIR)/$(IMG_PREFIX)-combined-$(1)-esxi-flat.vmdk || true
+	$(STAGING_DIR_HOST)/bin/qemu-img convert -f raw -O vmdk -o adapter_type=lsilogic,subformat=monolithicFlat \
+		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1).img \
+		$(BIN_DIR)/$(IMG_PREFIX)-combined-$(1)-esxi.vmdk
   endef
 endif
 
