@@ -1,7 +1,7 @@
 From 0b1c27db12fd338ed912fec18f5cc02d7bd4e54e Mon Sep 17 00:00:00 2001
 From: Quentin Monnet <quentin.monnet@netronome.com>
 Date: Fri, 3 Nov 2017 13:59:07 -0700
-Subject: tools: bpftool: move p_err() and p_info() from main.h to common.c
+Subject: [PATCH 32/95] tools: bpftool: move p_err() and p_info() from main.h to common.c
 
 The two functions were declared as static inline in a header file. There
 is no particular reason why they should be inlined, they just happened to
@@ -114,4 +114,5 @@ index d315d01be645..ff5ad05b137b 100644
  #endif
 -- 
 cgit 1.2.3-1.el7
+
 
