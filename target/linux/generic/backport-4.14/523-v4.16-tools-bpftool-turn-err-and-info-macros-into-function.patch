@@ -1,0 +1,728 @@
+From 9a5ab8bf1d6d16ef47fdf55dba1683ec00d751ad Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Mon, 23 Oct 2017 09:24:13 -0700
+Subject: [PATCH 24/95] tools: bpftool: turn err() and info() macros into functions
+
+Turn err() and info() macros into functions.
+
+In order to avoid naming conflicts with variables in the code, rename
+them as p_err() and p_info() respectively.
+
+The behavior of these functions is similar to the one of the macros for
+plain output. However, when JSON output is requested, these macros
+return a JSON-formatted "error" object instead of printing a message to
+stderr.
+
+To handle error messages correctly with JSON, a modification was brought
+to their behavior nonetheless: the functions now append a end-of-line
+character at the end of the message. This way, we can remove end-of-line
+characters at the end of the argument strings, and not have them in the
+JSON output.
+
+All error messages are formatted to hold in a single call to p_err(), in
+order to produce a single JSON field.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/common.c | 26 +++++++-------
+ tools/bpf/bpftool/main.c   | 16 ++++-----
+ tools/bpf/bpftool/main.h   | 37 +++++++++++++++++---
+ tools/bpf/bpftool/map.c    | 87 +++++++++++++++++++++++++---------------------
+ tools/bpf/bpftool/prog.c   | 51 +++++++++++++--------------
+ 5 files changed, 126 insertions(+), 91 deletions(-)
+
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+index e7a756b8ee21..b2533f1cae3e 100644
+--- a/tools/bpf/bpftool/common.c
++++ b/tools/bpf/bpftool/common.c
+@@ -66,8 +66,8 @@ int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
+ 
+ 	fd = bpf_obj_get(path);
+ 	if (fd < 0) {
+-		err("bpf obj get (%s): %s\n", path,
+-		    errno == EACCES && !is_bpffs(dirname(path)) ?
++		p_err("bpf obj get (%s): %s", path,
++		      errno == EACCES && !is_bpffs(dirname(path)) ?
+ 		    "directory not in bpf file system (bpffs)" :
+ 		    strerror(errno));
+ 		return -1;
+@@ -79,7 +79,7 @@ int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
+ 		return type;
+ 	}
+ 	if (type != exp_type) {
+-		err("incorrect object type: %s\n", get_fd_type_name(type));
++		p_err("incorrect object type: %s", get_fd_type_name(type));
+ 		close(fd);
+ 		return -1;
+ 	}
+@@ -95,14 +95,14 @@ int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32))
+ 	int fd;
+ 
+ 	if (!is_prefix(*argv, "id")) {
+-		err("expected 'id' got %s\n", *argv);
++		p_err("expected 'id' got %s", *argv);
+ 		return -1;
+ 	}
+ 	NEXT_ARG();
+ 
+ 	id = strtoul(*argv, &endptr, 0);
+ 	if (*endptr) {
+-		err("can't parse %s as ID\n", *argv);
++		p_err("can't parse %s as ID", *argv);
+ 		return -1;
+ 	}
+ 	NEXT_ARG();
+@@ -112,15 +112,15 @@ int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32))
+ 
+ 	fd = get_fd_by_id(id);
+ 	if (fd < 0) {
+-		err("can't get prog by id (%u): %s\n", id, strerror(errno));
++		p_err("can't get prog by id (%u): %s", id, strerror(errno));
+ 		return -1;
+ 	}
+ 
+ 	err = bpf_obj_pin(fd, *argv);
+ 	close(fd);
+ 	if (err) {
+-		err("can't pin the object (%s): %s\n", *argv,
+-		    errno == EACCES && !is_bpffs(dirname(*argv)) ?
++		p_err("can't pin the object (%s): %s", *argv,
++		      errno == EACCES && !is_bpffs(dirname(*argv)) ?
+ 		    "directory not in bpf file system (bpffs)" :
+ 		    strerror(errno));
+ 		return -1;
+@@ -153,11 +153,11 @@ int get_fd_type(int fd)
+ 
+ 	n = readlink(path, buf, sizeof(buf));
+ 	if (n < 0) {
+-		err("can't read link type: %s\n", strerror(errno));
++		p_err("can't read link type: %s", strerror(errno));
+ 		return -1;
+ 	}
+ 	if (n == sizeof(path)) {
+-		err("can't read link type: path too long!\n");
++		p_err("can't read link type: path too long!");
+ 		return -1;
+ 	}
+ 
+@@ -181,7 +181,7 @@ char *get_fdinfo(int fd, const char *key)
+ 
+ 	fdi = fopen(path, "r");
+ 	if (!fdi) {
+-		err("can't open fdinfo: %s\n", strerror(errno));
++		p_err("can't open fdinfo: %s", strerror(errno));
+ 		return NULL;
+ 	}
+ 
+@@ -196,7 +196,7 @@ char *get_fdinfo(int fd, const char *key)
+ 
+ 		value = strchr(line, '\t');
+ 		if (!value || !value[1]) {
+-			err("malformed fdinfo!?\n");
++			p_err("malformed fdinfo!?");
+ 			free(line);
+ 			return NULL;
+ 		}
+@@ -209,7 +209,7 @@ char *get_fdinfo(int fd, const char *key)
+ 		return line;
+ 	}
+ 
+-	err("key '%s' not found in fdinfo\n", key);
++	p_err("key '%s' not found in fdinfo", key);
+ 	free(line);
+ 	fclose(fdi);
+ 	return NULL;
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index 71b01bf73912..9989a77fdc4a 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -158,20 +158,20 @@ static int do_batch(int argc, char **argv)
+ 	int i;
+ 
+ 	if (argc < 2) {
+-		err("too few parameters for batch\n");
++		p_err("too few parameters for batch");
+ 		return -1;
+ 	} else if (!is_prefix(*argv, "file")) {
+-		err("expected 'file', got: %s\n", *argv);
++		p_err("expected 'file', got: %s", *argv);
+ 		return -1;
+ 	} else if (argc > 2) {
+-		err("too many parameters for batch\n");
++		p_err("too many parameters for batch");
+ 		return -1;
+ 	}
+ 	NEXT_ARG();
+ 
+ 	fp = fopen(*argv, "r");
+ 	if (!fp) {
+-		err("Can't open file (%s): %s\n", *argv, strerror(errno));
++		p_err("Can't open file (%s): %s", *argv, strerror(errno));
+ 		return -1;
+ 	}
+ 
+@@ -189,8 +189,8 @@ static int do_batch(int argc, char **argv)
+ 		while (n_argv[n_argc]) {
+ 			n_argc++;
+ 			if (n_argc == ARRAY_SIZE(n_argv)) {
+-				err("line %d has too many arguments, skip\n",
+-				    lines);
++				p_err("line %d has too many arguments, skip",
++				      lines);
+ 				n_argc = 0;
+ 				break;
+ 			}
+@@ -225,7 +225,7 @@ static int do_batch(int argc, char **argv)
+ 		perror("reading batch file failed");
+ 		err = -1;
+ 	} else {
+-		info("processed %d lines\n", lines);
++		p_info("processed %d lines", lines);
+ 		err = 0;
+ 	}
+ err_close:
+@@ -279,7 +279,7 @@ int main(int argc, char **argv)
+ 	if (json_output) {
+ 		json_wtr = jsonw_new(stdout);
+ 		if (!json_wtr) {
+-			err("failed to create JSON writer\n");
++			p_err("failed to create JSON writer");
+ 			return -1;
+ 		}
+ 		jsonw_pretty(json_wtr, pretty_output);
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index 693fc9710be1..04c88b55d8c7 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -45,15 +45,11 @@
+ 
+ #include "json_writer.h"
+ 
+-#define err(msg...)	fprintf(stderr, "Error: " msg)
+-#define warn(msg...)	fprintf(stderr, "Warning: " msg)
+-#define info(msg...)	fprintf(stderr, msg)
+-
+ #define ptr_to_u64(ptr)	((__u64)(unsigned long)(ptr))
+ 
+ #define NEXT_ARG()	({ argc--; argv++; if (argc < 0) usage(); })
+ #define NEXT_ARGP()	({ (*argc)--; (*argv)++; if (*argc < 0) usage(); })
+-#define BAD_ARG()	({ err("what is '%s'?\n", *argv); -1; })
++#define BAD_ARG()	({ p_err("what is '%s'?\n", *argv); -1; })
+ 
+ #define BPF_TAG_FMT	"%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx"
+ 
+@@ -97,4 +93,35 @@ int prog_parse_fd(int *argc, char ***argv);
+ void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes);
+ void print_hex_data_json(uint8_t *data, size_t len);
+ 
++static inline void p_err(const char *fmt, ...)
++{
++	va_list ap;
++
++	va_start(ap, fmt);
++	if (json_output) {
++		jsonw_start_object(json_wtr);
++		jsonw_name(json_wtr, "error");
++		jsonw_vprintf_enquote(json_wtr, fmt, ap);
++		jsonw_end_object(json_wtr);
++	} else {
++		fprintf(stderr, "Error: ");
++		vfprintf(stderr, fmt, ap);
++		fprintf(stderr, "\n");
++	}
++	va_end(ap);
++}
++
++static inline void p_info(const char *fmt, ...)
++{
++	va_list ap;
++
++	if (json_output)
++		return;
++
++	va_start(ap, fmt);
++	vfprintf(stderr, fmt, ap);
++	fprintf(stderr, "\n");
++	va_end(ap);
++}
++
+ #endif
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index 14d89bfabc66..86c128c433ba 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -81,19 +81,19 @@ static unsigned int get_possible_cpus(void)
+ 
+ 	fd = open("/sys/devices/system/cpu/possible", O_RDONLY);
+ 	if (fd < 0) {
+-		err("can't open sysfs possible cpus\n");
++		p_err("can't open sysfs possible cpus");
+ 		exit(-1);
+ 	}
+ 
+ 	n = read(fd, buf, sizeof(buf));
+ 	if (n < 2) {
+-		err("can't read sysfs possible cpus\n");
++		p_err("can't read sysfs possible cpus");
+ 		exit(-1);
+ 	}
+ 	close(fd);
+ 
+ 	if (n == sizeof(buf)) {
+-		err("read sysfs possible cpus overflow\n");
++		p_err("read sysfs possible cpus overflow");
+ 		exit(-1);
+ 	}
+ 
+@@ -161,14 +161,14 @@ static int map_parse_fd(int *argc, char ***argv)
+ 
+ 		id = strtoul(**argv, &endptr, 0);
+ 		if (*endptr) {
+-			err("can't parse %s as ID\n", **argv);
++			p_err("can't parse %s as ID", **argv);
+ 			return -1;
+ 		}
+ 		NEXT_ARGP();
+ 
+ 		fd = bpf_map_get_fd_by_id(id);
+ 		if (fd < 0)
+-			err("get map by id (%u): %s\n", id, strerror(errno));
++			p_err("get map by id (%u): %s", id, strerror(errno));
+ 		return fd;
+ 	} else if (is_prefix(**argv, "pinned")) {
+ 		char *path;
+@@ -181,7 +181,7 @@ static int map_parse_fd(int *argc, char ***argv)
+ 		return open_obj_pinned_any(path, BPF_OBJ_MAP);
+ 	}
+ 
+-	err("expected 'id' or 'pinned', got: '%s'?\n", **argv);
++	p_err("expected 'id' or 'pinned', got: '%s'?", **argv);
+ 	return -1;
+ }
+ 
+@@ -197,7 +197,7 @@ map_parse_fd_and_info(int *argc, char ***argv, void *info, __u32 *info_len)
+ 
+ 	err = bpf_obj_get_info_by_fd(fd, info, info_len);
+ 	if (err) {
+-		err("can't get map info: %s\n", strerror(errno));
++		p_err("can't get map info: %s", strerror(errno));
+ 		close(fd);
+ 		return err;
+ 	}
+@@ -288,14 +288,14 @@ static char **parse_bytes(char **argv, const char *name, unsigned char *val,
+ 	while (i < n && argv[i]) {
+ 		val[i] = strtoul(argv[i], &endptr, 0);
+ 		if (*endptr) {
+-			err("error parsing byte: %s\n", argv[i]);
++			p_err("error parsing byte: %s", argv[i]);
+ 			return NULL;
+ 		}
+ 		i++;
+ 	}
+ 
+ 	if (i != n) {
+-		err("%s expected %d bytes got %d\n", name, n, i);
++		p_err("%s expected %d bytes got %d", name, n, i);
+ 		return NULL;
+ 	}
+ 
+@@ -309,16 +309,16 @@ static int parse_elem(char **argv, struct bpf_map_info *info,
+ 	if (!*argv) {
+ 		if (!key && !value)
+ 			return 0;
+-		err("did not find %s\n", key ? "key" : "value");
++		p_err("did not find %s", key ? "key" : "value");
+ 		return -1;
+ 	}
+ 
+ 	if (is_prefix(*argv, "key")) {
+ 		if (!key) {
+ 			if (key_size)
+-				err("duplicate key\n");
++				p_err("duplicate key");
+ 			else
+-				err("unnecessary key\n");
++				p_err("unnecessary key");
+ 			return -1;
+ 		}
+ 
+@@ -333,9 +333,9 @@ static int parse_elem(char **argv, struct bpf_map_info *info,
+ 
+ 		if (!value) {
+ 			if (value_size)
+-				err("duplicate value\n");
++				p_err("duplicate value");
+ 			else
+-				err("unnecessary value\n");
++				p_err("unnecessary value");
+ 			return -1;
+ 		}
+ 
+@@ -345,11 +345,11 @@ static int parse_elem(char **argv, struct bpf_map_info *info,
+ 			int argc = 2;
+ 
+ 			if (value_size != 4) {
+-				err("value smaller than 4B for map in map?\n");
++				p_err("value smaller than 4B for map in map?");
+ 				return -1;
+ 			}
+ 			if (!argv[0] || !argv[1]) {
+-				err("not enough value arguments for map in map\n");
++				p_err("not enough value arguments for map in map");
+ 				return -1;
+ 			}
+ 
+@@ -363,11 +363,11 @@ static int parse_elem(char **argv, struct bpf_map_info *info,
+ 			int argc = 2;
+ 
+ 			if (value_size != 4) {
+-				err("value smaller than 4B for map of progs?\n");
++				p_err("value smaller than 4B for map of progs?");
+ 				return -1;
+ 			}
+ 			if (!argv[0] || !argv[1]) {
+-				err("not enough value arguments for map of progs\n");
++				p_err("not enough value arguments for map of progs");
+ 				return -1;
+ 			}
+ 
+@@ -388,7 +388,7 @@ static int parse_elem(char **argv, struct bpf_map_info *info,
+ 	} else if (is_prefix(*argv, "any") || is_prefix(*argv, "noexist") ||
+ 		   is_prefix(*argv, "exist")) {
+ 		if (!flags) {
+-			err("flags specified multiple times: %s\n", *argv);
++			p_err("flags specified multiple times: %s", *argv);
+ 			return -1;
+ 		}
+ 
+@@ -403,7 +403,7 @@ static int parse_elem(char **argv, struct bpf_map_info *info,
+ 				  value_size, NULL, value_fd);
+ 	}
+ 
+-	err("expected key or value, got: %s\n", *argv);
++	p_err("expected key or value, got: %s", *argv);
+ 	return -1;
+ }
+ 
+@@ -499,22 +499,21 @@ static int do_show(int argc, char **argv)
+ 		if (err) {
+ 			if (errno == ENOENT)
+ 				break;
+-			err("can't get next map: %s\n", strerror(errno));
+-			if (errno == EINVAL)
+-				err("kernel too old?\n");
++			p_err("can't get next map: %s%s", strerror(errno),
++			      errno == EINVAL ? " -- kernel too old?" : "");
+ 			return -1;
+ 		}
+ 
+ 		fd = bpf_map_get_fd_by_id(id);
+ 		if (fd < 0) {
+-			err("can't get map by id (%u): %s\n",
+-			    id, strerror(errno));
++			p_err("can't get map by id (%u): %s",
++			      id, strerror(errno));
+ 			return -1;
+ 		}
+ 
+ 		err = bpf_obj_get_info_by_fd(fd, &info, &len);
+ 		if (err) {
+-			err("can't get map info: %s\n", strerror(errno));
++			p_err("can't get map info: %s", strerror(errno));
+ 			close(fd);
+ 			return -1;
+ 		}
+@@ -547,7 +546,7 @@ static int do_dump(int argc, char **argv)
+ 		return -1;
+ 
+ 	if (map_is_map_of_maps(info.type) || map_is_map_of_progs(info.type)) {
+-		err("Dumping maps of maps and program maps not supported\n");
++		p_err("Dumping maps of maps and program maps not supported");
+ 		close(fd);
+ 		return -1;
+ 	}
+@@ -555,7 +554,7 @@ static int do_dump(int argc, char **argv)
+ 	key = malloc(info.key_size);
+ 	value = alloc_value(&info);
+ 	if (!key || !value) {
+-		err("mem alloc failed\n");
++		p_err("mem alloc failed");
+ 		err = -1;
+ 		goto exit_free;
+ 	}
+@@ -577,9 +576,19 @@ static int do_dump(int argc, char **argv)
+ 			else
+ 				print_entry_plain(&info, key, value);
+ 		} else {
+-			info("can't lookup element with key: ");
+-			fprint_hex(stderr, key, info.key_size, " ");
+-			fprintf(stderr, "\n");
++			if (json_output) {
++				jsonw_name(json_wtr, "key");
++				print_hex_data_json(key, info.key_size);
++				jsonw_name(json_wtr, "value");
++				jsonw_start_object(json_wtr);
++				jsonw_string_field(json_wtr, "error",
++						   "can't lookup element");
++				jsonw_end_object(json_wtr);
++			} else {
++				p_info("can't lookup element with key: ");
++				fprint_hex(stderr, key, info.key_size, " ");
++				fprintf(stderr, "\n");
++			}
+ 		}
+ 
+ 		prev_key = key;
+@@ -619,7 +628,7 @@ static int do_update(int argc, char **argv)
+ 	key = malloc(info.key_size);
+ 	value = alloc_value(&info);
+ 	if (!key || !value) {
+-		err("mem alloc failed");
++		p_err("mem alloc failed");
+ 		err = -1;
+ 		goto exit_free;
+ 	}
+@@ -631,7 +640,7 @@ static int do_update(int argc, char **argv)
+ 
+ 	err = bpf_map_update_elem(fd, key, value, flags);
+ 	if (err) {
+-		err("update failed: %s\n", strerror(errno));
++		p_err("update failed: %s", strerror(errno));
+ 		goto exit_free;
+ 	}
+ 
+@@ -663,7 +672,7 @@ static int do_lookup(int argc, char **argv)
+ 	key = malloc(info.key_size);
+ 	value = alloc_value(&info);
+ 	if (!key || !value) {
+-		err("mem alloc failed");
++		p_err("mem alloc failed");
+ 		err = -1;
+ 		goto exit_free;
+ 	}
+@@ -687,7 +696,7 @@ static int do_lookup(int argc, char **argv)
+ 			printf("\n\nNot found\n");
+ 		}
+ 	} else {
+-		err("lookup failed: %s\n", strerror(errno));
++		p_err("lookup failed: %s", strerror(errno));
+ 	}
+ 
+ exit_free:
+@@ -716,7 +725,7 @@ static int do_getnext(int argc, char **argv)
+ 	key = malloc(info.key_size);
+ 	nextkey = malloc(info.key_size);
+ 	if (!key || !nextkey) {
+-		err("mem alloc failed");
++		p_err("mem alloc failed");
+ 		err = -1;
+ 		goto exit_free;
+ 	}
+@@ -733,7 +742,7 @@ static int do_getnext(int argc, char **argv)
+ 
+ 	err = bpf_map_get_next_key(fd, key, nextkey);
+ 	if (err) {
+-		err("can't get next key: %s\n", strerror(errno));
++		p_err("can't get next key: %s", strerror(errno));
+ 		goto exit_free;
+ 	}
+ 
+@@ -786,7 +795,7 @@ static int do_delete(int argc, char **argv)
+ 
+ 	key = malloc(info.key_size);
+ 	if (!key) {
+-		err("mem alloc failed");
++		p_err("mem alloc failed");
+ 		err = -1;
+ 		goto exit_free;
+ 	}
+@@ -797,7 +806,7 @@ static int do_delete(int argc, char **argv)
+ 
+ 	err = bpf_map_delete_elem(fd, key);
+ 	if (err)
+-		err("delete failed: %s\n", strerror(errno));
++		p_err("delete failed: %s", strerror(errno));
+ 
+ exit_free:
+ 	free(key);
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 43e49799a624..41bd5390b4fc 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -104,21 +104,21 @@ static int prog_fd_by_tag(unsigned char *tag)
+ 	while (true) {
+ 		err = bpf_prog_get_next_id(id, &id);
+ 		if (err) {
+-			err("%s\n", strerror(errno));
++			p_err("%s", strerror(errno));
+ 			return -1;
+ 		}
+ 
+ 		fd = bpf_prog_get_fd_by_id(id);
+ 		if (fd < 0) {
+-			err("can't get prog by id (%u): %s\n",
+-			    id, strerror(errno));
++			p_err("can't get prog by id (%u): %s",
++			      id, strerror(errno));
+ 			return -1;
+ 		}
+ 
+ 		err = bpf_obj_get_info_by_fd(fd, &info, &len);
+ 		if (err) {
+-			err("can't get prog info (%u): %s\n",
+-			    id, strerror(errno));
++			p_err("can't get prog info (%u): %s",
++			      id, strerror(errno));
+ 			close(fd);
+ 			return -1;
+ 		}
+@@ -142,14 +142,14 @@ int prog_parse_fd(int *argc, char ***argv)
+ 
+ 		id = strtoul(**argv, &endptr, 0);
+ 		if (*endptr) {
+-			err("can't parse %s as ID\n", **argv);
++			p_err("can't parse %s as ID", **argv);
+ 			return -1;
+ 		}
+ 		NEXT_ARGP();
+ 
+ 		fd = bpf_prog_get_fd_by_id(id);
+ 		if (fd < 0)
+-			err("get by id (%u): %s\n", id, strerror(errno));
++			p_err("get by id (%u): %s", id, strerror(errno));
+ 		return fd;
+ 	} else if (is_prefix(**argv, "tag")) {
+ 		unsigned char tag[BPF_TAG_SIZE];
+@@ -159,7 +159,7 @@ int prog_parse_fd(int *argc, char ***argv)
+ 		if (sscanf(**argv, BPF_TAG_FMT, tag, tag + 1, tag + 2,
+ 			   tag + 3, tag + 4, tag + 5, tag + 6, tag + 7)
+ 		    != BPF_TAG_SIZE) {
+-			err("can't parse tag\n");
++			p_err("can't parse tag");
+ 			return -1;
+ 		}
+ 		NEXT_ARGP();
+@@ -176,7 +176,7 @@ int prog_parse_fd(int *argc, char ***argv)
+ 		return open_obj_pinned_any(path, BPF_OBJ_PROG);
+ 	}
+ 
+-	err("expected 'id', 'tag' or 'pinned', got: '%s'?\n", **argv);
++	p_err("expected 'id', 'tag' or 'pinned', got: '%s'?", **argv);
+ 	return -1;
+ }
+ 
+@@ -311,7 +311,7 @@ static int show_prog(int fd)
+ 
+ 	err = bpf_obj_get_info_by_fd(fd, &info, &len);
+ 	if (err) {
+-		err("can't get prog info: %s\n", strerror(errno));
++		p_err("can't get prog info: %s", strerror(errno));
+ 		return -1;
+ 	}
+ 
+@@ -349,17 +349,16 @@ static int do_show(int argc, char **argv)
+ 				err = 0;
+ 				break;
+ 			}
+-			err("can't get next program: %s\n", strerror(errno));
+-			if (errno == EINVAL)
+-				err("kernel too old?\n");
++			p_err("can't get next program: %s%s", strerror(errno),
++			      errno == EINVAL ? " -- kernel too old?" : "");
+ 			err = -1;
+ 			break;
+ 		}
+ 
+ 		fd = bpf_prog_get_fd_by_id(id);
+ 		if (fd < 0) {
+-			err("can't get prog by id (%u): %s\n",
+-			    id, strerror(errno));
++			p_err("can't get prog by id (%u): %s",
++			      id, strerror(errno));
+ 			err = -1;
+ 			break;
+ 		}
+@@ -498,7 +497,7 @@ static int do_dump(int argc, char **argv)
+ 		member_len = &info.xlated_prog_len;
+ 		member_ptr = &info.xlated_prog_insns;
+ 	} else {
+-		err("expected 'xlated' or 'jited', got: %s\n", *argv);
++		p_err("expected 'xlated' or 'jited', got: %s", *argv);
+ 		return -1;
+ 	}
+ 	NEXT_ARG();
+@@ -513,7 +512,7 @@ static int do_dump(int argc, char **argv)
+ 	if (is_prefix(*argv, "file")) {
+ 		NEXT_ARG();
+ 		if (!argc) {
+-			err("expected file path\n");
++			p_err("expected file path");
+ 			return -1;
+ 		}
+ 
+@@ -531,12 +530,12 @@ static int do_dump(int argc, char **argv)
+ 
+ 	err = bpf_obj_get_info_by_fd(fd, &info, &len);
+ 	if (err) {
+-		err("can't get prog info: %s\n", strerror(errno));
++		p_err("can't get prog info: %s", strerror(errno));
+ 		return -1;
+ 	}
+ 
+ 	if (!*member_len) {
+-		info("no instructions returned\n");
++		p_info("no instructions returned");
+ 		close(fd);
+ 		return 0;
+ 	}
+@@ -545,7 +544,7 @@ static int do_dump(int argc, char **argv)
+ 
+ 	buf = malloc(buf_size);
+ 	if (!buf) {
+-		err("mem alloc failed\n");
++		p_err("mem alloc failed");
+ 		close(fd);
+ 		return -1;
+ 	}
+@@ -558,28 +557,28 @@ static int do_dump(int argc, char **argv)
+ 	err = bpf_obj_get_info_by_fd(fd, &info, &len);
+ 	close(fd);
+ 	if (err) {
+-		err("can't get prog info: %s\n", strerror(errno));
++		p_err("can't get prog info: %s", strerror(errno));
+ 		goto err_free;
+ 	}
+ 
+ 	if (*member_len > buf_size) {
+-		err("too many instructions returned\n");
++		p_err("too many instructions returned");
+ 		goto err_free;
+ 	}
+ 
+ 	if (filepath) {
+ 		fd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+ 		if (fd < 0) {
+-			err("can't open file %s: %s\n", filepath,
+-			    strerror(errno));
++			p_err("can't open file %s: %s", filepath,
++			      strerror(errno));
+ 			goto err_free;
+ 		}
+ 
+ 		n = write(fd, buf, *member_len);
+ 		close(fd);
+ 		if (n != *member_len) {
+-			err("error writing output file: %s\n",
+-			    n < 0 ? strerror(errno) : "short write");
++			p_err("error writing output file: %s",
++			      n < 0 ? strerror(errno) : "short write");
+ 			goto err_free;
+ 		}
+ 	} else {
+-- 
+cgit 1.2.3-1.el7
+
+

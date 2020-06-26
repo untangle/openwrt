@@ -1,0 +1,123 @@
+From d35efba99d9221d9fe1715a23247ad9b703544ec Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Mon, 23 Oct 2017 09:24:07 -0700
+Subject: [PATCH 18/95] tools: bpftool: introduce --json and --pretty options
+
+These two options can be used to ask for a JSON output (--j or -json),
+and to make this JSON human-readable (-p or --pretty).
+
+A json_writer object is created when JSON is required, and will be used
+in follow-up commits to produce JSON output.
+
+Note that --pretty implies --json.
+
+Update for the manual pages and interactive help messages comes in a
+later patch of the series.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/main.c | 33 ++++++++++++++++++++++++++++++---
+ tools/bpf/bpftool/main.h |  5 +++++
+ 2 files changed, 35 insertions(+), 3 deletions(-)
+
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index 613e3c75f78a..14bfc17cd4de 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -51,6 +51,9 @@ const char *bin_name;
+ static int last_argc;
+ static char **last_argv;
+ static int (*last_do_help)(int argc, char **argv);
++json_writer_t *json_wtr;
++bool pretty_output;
++bool json_output;
+ 
+ void usage(void)
+ {
+@@ -217,22 +220,32 @@ err_close:
+ int main(int argc, char **argv)
+ {
+ 	static const struct option options[] = {
++		{ "json",	no_argument,	NULL,	'j' },
+ 		{ "help",	no_argument,	NULL,	'h' },
++		{ "pretty",	no_argument,	NULL,	'p' },
+ 		{ "version",	no_argument,	NULL,	'V' },
+ 		{ 0 }
+ 	};
+-	int opt;
++	int opt, ret;
+ 
+ 	last_do_help = do_help;
++	pretty_output = false;
++	json_output = false;
+ 	bin_name = argv[0];
+ 
+-	while ((opt = getopt_long(argc, argv, "Vh",
++	while ((opt = getopt_long(argc, argv, "Vhpj",
+ 				  options, NULL)) >= 0) {
+ 		switch (opt) {
+ 		case 'V':
+ 			return do_version(argc, argv);
+ 		case 'h':
+ 			return do_help(argc, argv);
++		case 'p':
++			pretty_output = true;
++			/* fall through */
++		case 'j':
++			json_output = true;
++			break;
+ 		default:
+ 			usage();
+ 		}
+@@ -243,7 +256,21 @@ int main(int argc, char **argv)
+ 	if (argc < 0)
+ 		usage();
+ 
++	if (json_output) {
++		json_wtr = jsonw_new(stdout);
++		if (!json_wtr) {
++			err("failed to create JSON writer\n");
++			return -1;
++		}
++		jsonw_pretty(json_wtr, pretty_output);
++	}
++
+ 	bfd_init();
+ 
+-	return cmd_select(cmds, argc, argv, do_help);
++	ret = cmd_select(cmds, argc, argv, do_help);
++
++	if (json_output)
++		jsonw_destroy(&json_wtr);
++
++	return ret;
+ }
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index 41e6c7d3fcad..15927fc9fb31 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -43,6 +43,8 @@
+ #include <linux/bpf.h>
+ #include <linux/kernel.h>
+ 
++#include "json_writer.h"
++
+ #define err(msg...)	fprintf(stderr, "Error: " msg)
+ #define warn(msg...)	fprintf(stderr, "Warning: " msg)
+ #define info(msg...)	fprintf(stderr, msg)
+@@ -66,6 +68,9 @@ enum bpf_obj_type {
+ 
+ extern const char *bin_name;
+ 
++extern json_writer_t *json_wtr;
++extern bool json_output;
++
+ bool is_prefix(const char *pfx, const char *str);
+ void fprint_hex(FILE *f, void *arg, unsigned int n, const char *sep);
+ void usage(void) __attribute__((noreturn));
+-- 
+cgit 1.2.3-1.el7
+
+

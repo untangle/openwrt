@@ -1,0 +1,2015 @@
+From 71bb428fe2c19512ac671d5ee16ef3e73e1b49a8 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Wed, 4 Oct 2017 20:10:04 -0700
+Subject: [PATCH 02/95] tools: bpf: add bpftool
+
+Add a simple tool for querying and updating BPF objects on the system.
+
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Simon Horman <simon.horman@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/Makefile             |  18 +-
+ tools/bpf/bpftool/Makefile     |  80 +++++
+ tools/bpf/bpftool/common.c     | 216 ++++++++++++
+ tools/bpf/bpftool/jit_disasm.c |  87 +++++
+ tools/bpf/bpftool/main.c       | 212 ++++++++++++
+ tools/bpf/bpftool/main.h       |  99 ++++++
+ tools/bpf/bpftool/map.c        | 744 +++++++++++++++++++++++++++++++++++++++++
+ tools/bpf/bpftool/prog.c       | 456 +++++++++++++++++++++++++
+ 8 files changed, 1909 insertions(+), 3 deletions(-)
+ create mode 100644 tools/bpf/bpftool/Makefile
+ create mode 100644 tools/bpf/bpftool/common.c
+ create mode 100644 tools/bpf/bpftool/jit_disasm.c
+ create mode 100644 tools/bpf/bpftool/main.c
+ create mode 100644 tools/bpf/bpftool/main.h
+ create mode 100644 tools/bpf/bpftool/map.c
+ create mode 100644 tools/bpf/bpftool/prog.c
+
+diff --git a/tools/bpf/Makefile b/tools/bpf/Makefile
+index ddf888010652..325a35e1c28e 100644
+--- a/tools/bpf/Makefile
++++ b/tools/bpf/Makefile
+@@ -3,6 +3,7 @@ prefix = /usr
+ CC = gcc
+ LEX = flex
+ YACC = bison
++MAKE = make
+ 
+ CFLAGS += -Wall -O2
+ CFLAGS += -D__EXPORTED_HEADERS__ -I../../include/uapi -I../../include
+@@ -13,7 +14,7 @@ CFLAGS += -D__EXPORTED_HEADERS__ -I../../include/uapi -I../../include
+ %.lex.c: %.l
+ 	$(LEX) -o $@ $<
+ 
+-all : bpf_jit_disasm bpf_dbg bpf_asm
++all: bpf_jit_disasm bpf_dbg bpf_asm bpftool
+ 
+ bpf_jit_disasm : CFLAGS += -DPACKAGE='bpf_jit_disasm'
+ bpf_jit_disasm : LDLIBS = -lopcodes -lbfd -ldl
+@@ -26,10 +27,21 @@ bpf_asm : LDLIBS =
+ bpf_asm : bpf_asm.o bpf_exp.yacc.o bpf_exp.lex.o
+ bpf_exp.lex.o : bpf_exp.yacc.c
+ 
+-clean :
++clean: bpftool_clean
+ 	rm -rf *.o bpf_jit_disasm bpf_dbg bpf_asm bpf_exp.yacc.* bpf_exp.lex.*
+ 
+-install :
++install: bpftool_install
+ 	install bpf_jit_disasm $(prefix)/bin/bpf_jit_disasm
+ 	install bpf_dbg $(prefix)/bin/bpf_dbg
+ 	install bpf_asm $(prefix)/bin/bpf_asm
++
++bpftool:
++	$(MAKE) -C bpftool
++
++bpftool_install:
++	$(MAKE) -C bpftool install
++
++bpftool_clean:
++	$(MAKE) -C bpftool clean
++
++.PHONY: bpftool FORCE
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+new file mode 100644
+index 000000000000..a7151f47fb40
+--- /dev/null
++++ b/tools/bpf/bpftool/Makefile
+@@ -0,0 +1,80 @@
++include ../../scripts/Makefile.include
++
++include ../../scripts/utilities.mak
++
++ifeq ($(srctree),)
++srctree := $(patsubst %/,%,$(dir $(CURDIR)))
++srctree := $(patsubst %/,%,$(dir $(srctree)))
++srctree := $(patsubst %/,%,$(dir $(srctree)))
++#$(info Determined 'srctree' to be $(srctree))
++endif
++
++ifneq ($(objtree),)
++#$(info Determined 'objtree' to be $(objtree))
++endif
++
++ifneq ($(OUTPUT),)
++#$(info Determined 'OUTPUT' to be $(OUTPUT))
++# Adding $(OUTPUT) as a directory to look for source files,
++# because use generated output files as sources dependency
++# for flex/bison parsers.
++VPATH += $(OUTPUT)
++export VPATH
++endif
++
++ifeq ($(V),1)
++  Q =
++else
++  Q = @
++endif
++
++BPF_DIR	= $(srctree)/tools/lib/bpf/
++
++ifneq ($(OUTPUT),)
++  BPF_PATH=$(OUTPUT)
++else
++  BPF_PATH=$(BPF_DIR)
++endif
++
++LIBBPF = $(BPF_PATH)libbpf.a
++
++$(LIBBPF): FORCE
++	$(Q)$(MAKE) -C $(BPF_DIR) OUTPUT=$(OUTPUT) $(OUTPUT)libbpf.a FEATURES_DUMP=$(FEATURE_DUMP_EXPORT)
++
++$(LIBBPF)-clean:
++	$(call QUIET_CLEAN, libbpf)
++	$(Q)$(MAKE) -C $(BPF_DIR) OUTPUT=$(OUTPUT) clean >/dev/null
++
++prefix = /usr
++
++CC = gcc
++
++CFLAGS += -O2
++CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow
++CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf
++LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
++
++include $(wildcard *.d)
++
++all: $(OUTPUT)bpftool
++
++SRCS=$(wildcard *.c)
++OBJS=$(patsubst %.c,$(OUTPUT)%.o,$(SRCS))
++
++$(OUTPUT)bpftool: $(OBJS) $(LIBBPF)
++	$(QUIET_LINK)$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
++
++$(OUTPUT)%.o: %.c
++	$(QUIET_CC)$(COMPILE.c) -MMD -o $@ $<
++
++clean: $(LIBBPF)-clean
++	$(call QUIET_CLEAN, bpftool)
++	$(Q)rm -rf $(OUTPUT)bpftool $(OUTPUT)*.o $(OUTPUT)*.d
++
++install:
++	install $(OUTPUT)bpftool $(prefix)/sbin/bpftool
++
++FORCE:
++
++.PHONY: all clean FORCE
++.DEFAULT_GOAL := all
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+new file mode 100644
+index 000000000000..df8396a0c400
+--- /dev/null
++++ b/tools/bpf/bpftool/common.c
+@@ -0,0 +1,216 @@
++/*
++ * Copyright (C) 2017 Netronome Systems, Inc.
++ *
++ * This software is dual licensed under the GNU General License Version 2,
++ * June 1991 as shown in the file COPYING in the top-level directory of this
++ * source tree or the BSD 2-Clause License provided below.  You have the
++ * option to license this software under the complete terms of either license.
++ *
++ * The BSD 2-Clause License:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      1. Redistributions of source code must retain the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer.
++ *
++ *      2. Redistributions in binary form must reproduce the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer in the documentation and/or other materials
++ *         provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++/* Author: Jakub Kicinski <kubakici@wp.pl> */
++
++#include <errno.h>
++#include <libgen.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <linux/limits.h>
++#include <linux/magic.h>
++#include <sys/types.h>
++#include <sys/vfs.h>
++
++#include <bpf.h>
++
++#include "main.h"
++
++static bool is_bpffs(char *path)
++{
++	struct statfs st_fs;
++
++	if (statfs(path, &st_fs) < 0)
++		return false;
++
++	return (unsigned long)st_fs.f_type == BPF_FS_MAGIC;
++}
++
++int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
++{
++	enum bpf_obj_type type;
++	int fd;
++
++	fd = bpf_obj_get(path);
++	if (fd < 0) {
++		err("bpf obj get (%s): %s\n", path,
++		    errno == EACCES && !is_bpffs(dirname(path)) ?
++		    "directory not in bpf file system (bpffs)" :
++		    strerror(errno));
++		return -1;
++	}
++
++	type = get_fd_type(fd);
++	if (type < 0) {
++		close(fd);
++		return type;
++	}
++	if (type != exp_type) {
++		err("incorrect object type: %s\n", get_fd_type_name(type));
++		close(fd);
++		return -1;
++	}
++
++	return fd;
++}
++
++int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32))
++{
++	unsigned int id;
++	char *endptr;
++	int err;
++	int fd;
++
++	if (!is_prefix(*argv, "id")) {
++		err("expected 'id' got %s\n", *argv);
++		return -1;
++	}
++	NEXT_ARG();
++
++	id = strtoul(*argv, &endptr, 0);
++	if (*endptr) {
++		err("can't parse %s as ID\n", *argv);
++		return -1;
++	}
++	NEXT_ARG();
++
++	if (argc != 1)
++		usage();
++
++	fd = get_fd_by_id(id);
++	if (fd < 0) {
++		err("can't get prog by id (%u): %s\n", id, strerror(errno));
++		return -1;
++	}
++
++	err = bpf_obj_pin(fd, *argv);
++	close(fd);
++	if (err) {
++		err("can't pin the object (%s): %s\n", *argv,
++		    errno == EACCES && !is_bpffs(dirname(*argv)) ?
++		    "directory not in bpf file system (bpffs)" :
++		    strerror(errno));
++		return -1;
++	}
++
++	return 0;
++}
++
++const char *get_fd_type_name(enum bpf_obj_type type)
++{
++	static const char * const names[] = {
++		[BPF_OBJ_UNKNOWN]	= "unknown",
++		[BPF_OBJ_PROG]		= "prog",
++		[BPF_OBJ_MAP]		= "map",
++	};
++
++	if (type < 0 || type >= ARRAY_SIZE(names) || !names[type])
++		return names[BPF_OBJ_UNKNOWN];
++
++	return names[type];
++}
++
++int get_fd_type(int fd)
++{
++	char path[PATH_MAX];
++	char buf[512];
++	ssize_t n;
++
++	snprintf(path, sizeof(path), "/proc/%d/fd/%d", getpid(), fd);
++
++	n = readlink(path, buf, sizeof(buf));
++	if (n < 0) {
++		err("can't read link type: %s\n", strerror(errno));
++		return -1;
++	}
++	if (n == sizeof(path)) {
++		err("can't read link type: path too long!\n");
++		return -1;
++	}
++
++	if (strstr(buf, "bpf-map"))
++		return BPF_OBJ_MAP;
++	else if (strstr(buf, "bpf-prog"))
++		return BPF_OBJ_PROG;
++
++	return BPF_OBJ_UNKNOWN;
++}
++
++char *get_fdinfo(int fd, const char *key)
++{
++	char path[PATH_MAX];
++	char *line = NULL;
++	size_t line_n = 0;
++	ssize_t n;
++	FILE *fdi;
++
++	snprintf(path, sizeof(path), "/proc/%d/fdinfo/%d", getpid(), fd);
++
++	fdi = fopen(path, "r");
++	if (!fdi) {
++		err("can't open fdinfo: %s\n", strerror(errno));
++		return NULL;
++	}
++
++	while ((n = getline(&line, &line_n, fdi))) {
++		char *value;
++		int len;
++
++		if (!strstr(line, key))
++			continue;
++
++		fclose(fdi);
++
++		value = strchr(line, '\t');
++		if (!value || !value[1]) {
++			err("malformed fdinfo!?\n");
++			free(line);
++			return NULL;
++		}
++		value++;
++
++		len = strlen(value);
++		memmove(line, value, len);
++		line[len - 1] = '\0';
++
++		return line;
++	}
++
++	err("key '%s' not found in fdinfo\n", key);
++	free(line);
++	fclose(fdi);
++	return NULL;
++}
+diff --git a/tools/bpf/bpftool/jit_disasm.c b/tools/bpf/bpftool/jit_disasm.c
+new file mode 100644
+index 000000000000..70e480b59e9d
+--- /dev/null
++++ b/tools/bpf/bpftool/jit_disasm.c
+@@ -0,0 +1,87 @@
++/*
++ * Based on:
++ *
++ * Minimal BPF JIT image disassembler
++ *
++ * Disassembles BPF JIT compiler emitted opcodes back to asm insn's for
++ * debugging or verification purposes.
++ *
++ * Copyright 2013 Daniel Borkmann <daniel@iogearbox.net>
++ * Licensed under the GNU General Public License, version 2.0 (GPLv2)
++ */
++
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <assert.h>
++#include <unistd.h>
++#include <string.h>
++#include <bfd.h>
++#include <dis-asm.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++
++static void get_exec_path(char *tpath, size_t size)
++{
++	ssize_t len;
++	char *path;
++
++	snprintf(tpath, size, "/proc/%d/exe", (int) getpid());
++	tpath[size - 1] = 0;
++
++	path = strdup(tpath);
++	assert(path);
++
++	len = readlink(path, tpath, size - 1);
++	assert(len > 0);
++	tpath[len] = 0;
++
++	free(path);
++}
++
++void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes)
++{
++	disassembler_ftype disassemble;
++	struct disassemble_info info;
++	int count, i, pc = 0;
++	char tpath[256];
++	bfd *bfdf;
++
++	if (!len)
++		return;
++
++	memset(tpath, 0, sizeof(tpath));
++	get_exec_path(tpath, sizeof(tpath));
++
++	bfdf = bfd_openr(tpath, NULL);
++	assert(bfdf);
++	assert(bfd_check_format(bfdf, bfd_object));
++
++	init_disassemble_info(&info, stdout, (fprintf_ftype) fprintf);
++	info.arch = bfd_get_arch(bfdf);
++	info.mach = bfd_get_mach(bfdf);
++	info.buffer = image;
++	info.buffer_length = len;
++
++	disassemble_init_for_target(&info);
++
++	disassemble = disassembler(bfdf);
++	assert(disassemble);
++
++	do {
++		printf("%4x:\t", pc);
++
++		count = disassemble(pc, &info);
++
++		if (opcodes) {
++			printf("\n\t");
++			for (i = 0; i < count; ++i)
++				printf("%02x ", (uint8_t) image[pc + i]);
++		}
++		printf("\n");
++
++		pc += count;
++	} while (count > 0 && pc < len);
++
++	bfd_close(bfdf);
++}
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+new file mode 100644
+index 000000000000..e02d00d6e00b
+--- /dev/null
++++ b/tools/bpf/bpftool/main.c
+@@ -0,0 +1,212 @@
++/*
++ * Copyright (C) 2017 Netronome Systems, Inc.
++ *
++ * This software is dual licensed under the GNU General License Version 2,
++ * June 1991 as shown in the file COPYING in the top-level directory of this
++ * source tree or the BSD 2-Clause License provided below.  You have the
++ * option to license this software under the complete terms of either license.
++ *
++ * The BSD 2-Clause License:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      1. Redistributions of source code must retain the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer.
++ *
++ *      2. Redistributions in binary form must reproduce the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer in the documentation and/or other materials
++ *         provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++/* Author: Jakub Kicinski <kubakici@wp.pl> */
++
++#include <bfd.h>
++#include <ctype.h>
++#include <errno.h>
++#include <linux/bpf.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include <bpf.h>
++
++#include "main.h"
++
++const char *bin_name;
++static int last_argc;
++static char **last_argv;
++static int (*last_do_help)(int argc, char **argv);
++
++void usage(void)
++{
++	last_do_help(last_argc - 1, last_argv + 1);
++
++	exit(-1);
++}
++
++static int do_help(int argc, char **argv)
++{
++	fprintf(stderr,
++		"Usage: %s OBJECT { COMMAND | help }\n"
++		"       %s batch file FILE\n"
++		"\n"
++		"       OBJECT := { prog | map }\n",
++		bin_name, bin_name);
++
++	return 0;
++}
++
++int cmd_select(const struct cmd *cmds, int argc, char **argv,
++	       int (*help)(int argc, char **argv))
++{
++	unsigned int i;
++
++	last_argc = argc;
++	last_argv = argv;
++	last_do_help = help;
++
++	if (argc < 1 && cmds[0].func)
++		return cmds[0].func(argc, argv);
++
++	for (i = 0; cmds[i].func; i++)
++		if (is_prefix(*argv, cmds[i].cmd))
++			return cmds[i].func(argc - 1, argv + 1);
++
++	help(argc - 1, argv + 1);
++
++	return -1;
++}
++
++bool is_prefix(const char *pfx, const char *str)
++{
++	if (!pfx)
++		return false;
++	if (strlen(str) < strlen(pfx))
++		return false;
++
++	return !memcmp(str, pfx, strlen(pfx));
++}
++
++void print_hex(void *arg, unsigned int n, const char *sep)
++{
++	unsigned char *data = arg;
++	unsigned int i;
++
++	for (i = 0; i < n; i++) {
++		const char *pfx = "";
++
++		if (!i)
++			/* nothing */;
++		else if (!(i % 16))
++			printf("\n");
++		else if (!(i % 8))
++			printf("  ");
++		else
++			pfx = sep;
++
++		printf("%s%02hhx", i ? pfx : "", data[i]);
++	}
++}
++
++static int do_batch(int argc, char **argv);
++
++static const struct cmd cmds[] = {
++	{ "help",	do_help },
++	{ "batch",	do_batch },
++	{ "prog",	do_prog },
++	{ "map",	do_map },
++	{ 0 }
++};
++
++static int do_batch(int argc, char **argv)
++{
++	unsigned int lines = 0;
++	char *n_argv[4096];
++	char buf[65536];
++	int n_argc;
++	FILE *fp;
++	int err;
++
++	if (argc < 2) {
++		err("too few parameters for batch\n");
++		return -1;
++	} else if (!is_prefix(*argv, "file")) {
++		err("expected 'file', got: %s\n", *argv);
++		return -1;
++	} else if (argc > 2) {
++		err("too many parameters for batch\n");
++		return -1;
++	}
++	NEXT_ARG();
++
++	fp = fopen(*argv, "r");
++	if (!fp) {
++		err("Can't open file (%s): %s\n", *argv, strerror(errno));
++		return -1;
++	}
++
++	while (fgets(buf, sizeof(buf), fp)) {
++		if (strlen(buf) == sizeof(buf) - 1) {
++			errno = E2BIG;
++			break;
++		}
++
++		n_argc = 0;
++		n_argv[n_argc] = strtok(buf, " \t\n");
++
++		while (n_argv[n_argc]) {
++			n_argc++;
++			if (n_argc == ARRAY_SIZE(n_argv)) {
++				err("line %d has too many arguments, skip\n",
++				    lines);
++				n_argc = 0;
++				break;
++			}
++			n_argv[n_argc] = strtok(NULL, " \t\n");
++		}
++
++		if (!n_argc)
++			continue;
++
++		err = cmd_select(cmds, n_argc, n_argv, do_help);
++		if (err)
++			goto err_close;
++
++		lines++;
++	}
++
++	if (errno && errno != ENOENT) {
++		perror("reading batch file failed");
++		err = -1;
++	} else {
++		info("processed %d lines\n", lines);
++		err = 0;
++	}
++err_close:
++	fclose(fp);
++
++	return err;
++}
++
++int main(int argc, char **argv)
++{
++	bin_name = argv[0];
++	NEXT_ARG();
++
++	bfd_init();
++
++	return cmd_select(cmds, argc, argv, do_help);
++}
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+new file mode 100644
+index 000000000000..85d2d7870a58
+--- /dev/null
++++ b/tools/bpf/bpftool/main.h
+@@ -0,0 +1,99 @@
++/*
++ * Copyright (C) 2017 Netronome Systems, Inc.
++ *
++ * This software is dual licensed under the GNU General License Version 2,
++ * June 1991 as shown in the file COPYING in the top-level directory of this
++ * source tree or the BSD 2-Clause License provided below.  You have the
++ * option to license this software under the complete terms of either license.
++ *
++ * The BSD 2-Clause License:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      1. Redistributions of source code must retain the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer.
++ *
++ *      2. Redistributions in binary form must reproduce the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer in the documentation and/or other materials
++ *         provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++/* Author: Jakub Kicinski <kubakici@wp.pl> */
++
++#ifndef __BPF_TOOL_H
++#define __BPF_TOOL_H
++
++#include <stdbool.h>
++#include <stdio.h>
++#include <linux/bpf.h>
++
++#define ARRAY_SIZE(a)	(sizeof(a) / sizeof(a[0]))
++
++#define err(msg...)	fprintf(stderr, "Error: " msg)
++#define warn(msg...)	fprintf(stderr, "Warning: " msg)
++#define info(msg...)	fprintf(stderr, msg)
++
++#define ptr_to_u64(ptr)	((__u64)(unsigned long)(ptr))
++
++#define min(a, b)							\
++	({ typeof(a) _a = (a); typeof(b) _b = (b); _a > _b ? _b : _a; })
++#define max(a, b)							\
++	({ typeof(a) _a = (a); typeof(b) _b = (b); _a < _b ? _b : _a; })
++
++#define NEXT_ARG()	({ argc--; argv++; if (argc < 0) usage(); })
++#define NEXT_ARGP()	({ (*argc)--; (*argv)++; if (*argc < 0) usage(); })
++#define BAD_ARG()	({ err("what is '%s'?\n", *argv); -1; })
++
++#define BPF_TAG_FMT	"%02hhx:%02hhx:%02hhx:%02hhx:"	\
++			"%02hhx:%02hhx:%02hhx:%02hhx"
++
++#define HELP_SPEC_PROGRAM						\
++	"PROG := { id PROG_ID | pinned FILE | tag PROG_TAG }"
++
++enum bpf_obj_type {
++	BPF_OBJ_UNKNOWN,
++	BPF_OBJ_PROG,
++	BPF_OBJ_MAP,
++};
++
++extern const char *bin_name;
++
++bool is_prefix(const char *pfx, const char *str);
++void print_hex(void *arg, unsigned int n, const char *sep);
++void usage(void) __attribute__((noreturn));
++
++struct cmd {
++	const char *cmd;
++	int (*func)(int argc, char **argv);
++};
++
++int cmd_select(const struct cmd *cmds, int argc, char **argv,
++	       int (*help)(int argc, char **argv));
++
++int get_fd_type(int fd);
++const char *get_fd_type_name(enum bpf_obj_type type);
++char *get_fdinfo(int fd, const char *key);
++int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type);
++int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32));
++
++int do_prog(int argc, char **arg);
++int do_map(int argc, char **arg);
++
++int prog_parse_fd(int *argc, char ***argv);
++
++void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes);
++
++#endif
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+new file mode 100644
+index 000000000000..0528a5379e6c
+--- /dev/null
++++ b/tools/bpf/bpftool/map.c
+@@ -0,0 +1,744 @@
++/*
++ * Copyright (C) 2017 Netronome Systems, Inc.
++ *
++ * This software is dual licensed under the GNU General License Version 2,
++ * June 1991 as shown in the file COPYING in the top-level directory of this
++ * source tree or the BSD 2-Clause License provided below.  You have the
++ * option to license this software under the complete terms of either license.
++ *
++ * The BSD 2-Clause License:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      1. Redistributions of source code must retain the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer.
++ *
++ *      2. Redistributions in binary form must reproduce the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer in the documentation and/or other materials
++ *         provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++/* Author: Jakub Kicinski <kubakici@wp.pl> */
++
++#include <assert.h>
++#include <ctype.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++
++#include <bpf.h>
++
++#include "main.h"
++
++static const char * const map_type_name[] = {
++	[BPF_MAP_TYPE_UNSPEC]		= "unspec",
++	[BPF_MAP_TYPE_HASH]		= "hash",
++	[BPF_MAP_TYPE_ARRAY]		= "array",
++	[BPF_MAP_TYPE_PROG_ARRAY]	= "prog_array",
++	[BPF_MAP_TYPE_PERF_EVENT_ARRAY]	= "perf_event_array",
++	[BPF_MAP_TYPE_PERCPU_HASH]	= "percpu_hash",
++	[BPF_MAP_TYPE_PERCPU_ARRAY]	= "percpu_array",
++	[BPF_MAP_TYPE_STACK_TRACE]	= "stack_trace",
++	[BPF_MAP_TYPE_CGROUP_ARRAY]	= "cgroup_array",
++	[BPF_MAP_TYPE_LRU_HASH]		= "lru_hash",
++	[BPF_MAP_TYPE_LRU_PERCPU_HASH]	= "lru_percpu_hash",
++	[BPF_MAP_TYPE_LPM_TRIE]		= "lpm_trie",
++	[BPF_MAP_TYPE_ARRAY_OF_MAPS]	= "array_of_maps",
++	[BPF_MAP_TYPE_HASH_OF_MAPS]	= "hash_of_maps",
++	[BPF_MAP_TYPE_DEVMAP]		= "devmap",
++	[BPF_MAP_TYPE_SOCKMAP]		= "sockmap",
++};
++
++static unsigned int get_possible_cpus(void)
++{
++	static unsigned int result;
++	char buf[128];
++	long int n;
++	char *ptr;
++	int fd;
++
++	if (result)
++		return result;
++
++	fd = open("/sys/devices/system/cpu/possible", O_RDONLY);
++	if (fd < 0) {
++		err("can't open sysfs possible cpus\n");
++		exit(-1);
++	}
++
++	n = read(fd, buf, sizeof(buf));
++	if (n < 2) {
++		err("can't read sysfs possible cpus\n");
++		exit(-1);
++	}
++	close(fd);
++
++	if (n == sizeof(buf)) {
++		err("read sysfs possible cpus overflow\n");
++		exit(-1);
++	}
++
++	ptr = buf;
++	n = 0;
++	while (*ptr && *ptr != '\n') {
++		unsigned int a, b;
++
++		if (sscanf(ptr, "%u-%u", &a, &b) == 2) {
++			n += b - a + 1;
++
++			ptr = strchr(ptr, '-') + 1;
++		} else if (sscanf(ptr, "%u", &a) == 1) {
++			n++;
++		} else {
++			assert(0);
++		}
++
++		while (isdigit(*ptr))
++			ptr++;
++		if (*ptr == ',')
++			ptr++;
++	}
++
++	result = n;
++
++	return result;
++}
++
++static bool map_is_per_cpu(__u32 type)
++{
++	return type == BPF_MAP_TYPE_PERCPU_HASH ||
++	       type == BPF_MAP_TYPE_PERCPU_ARRAY ||
++	       type == BPF_MAP_TYPE_LRU_PERCPU_HASH;
++}
++
++static bool map_is_map_of_maps(__u32 type)
++{
++	return type == BPF_MAP_TYPE_ARRAY_OF_MAPS ||
++	       type == BPF_MAP_TYPE_HASH_OF_MAPS;
++}
++
++static bool map_is_map_of_progs(__u32 type)
++{
++	return type == BPF_MAP_TYPE_PROG_ARRAY;
++}
++
++static void *alloc_value(struct bpf_map_info *info)
++{
++	if (map_is_per_cpu(info->type))
++		return malloc(info->value_size * get_possible_cpus());
++	else
++		return malloc(info->value_size);
++}
++
++static int map_parse_fd(int *argc, char ***argv)
++{
++	int fd;
++
++	if (is_prefix(**argv, "id")) {
++		unsigned int id;
++		char *endptr;
++
++		NEXT_ARGP();
++
++		id = strtoul(**argv, &endptr, 0);
++		if (*endptr) {
++			err("can't parse %s as ID\n", **argv);
++			return -1;
++		}
++		NEXT_ARGP();
++
++		fd = bpf_map_get_fd_by_id(id);
++		if (fd < 0)
++			err("get map by id (%u): %s\n", id, strerror(errno));
++		return fd;
++	} else if (is_prefix(**argv, "pinned")) {
++		char *path;
++
++		NEXT_ARGP();
++
++		path = **argv;
++		NEXT_ARGP();
++
++		return open_obj_pinned_any(path, BPF_OBJ_MAP);
++	}
++
++	err("expected 'id' or 'pinned', got: '%s'?\n", **argv);
++	return -1;
++}
++
++static int
++map_parse_fd_and_info(int *argc, char ***argv, void *info, __u32 *info_len)
++{
++	int err;
++	int fd;
++
++	fd = map_parse_fd(argc, argv);
++	if (fd < 0)
++		return -1;
++
++	err = bpf_obj_get_info_by_fd(fd, info, info_len);
++	if (err) {
++		err("can't get map info: %s\n", strerror(errno));
++		close(fd);
++		return err;
++	}
++
++	return fd;
++}
++
++static void print_entry(struct bpf_map_info *info, unsigned char *key,
++			unsigned char *value)
++{
++	if (!map_is_per_cpu(info->type)) {
++		bool single_line, break_names;
++
++		break_names = info->key_size > 16 || info->value_size > 16;
++		single_line = info->key_size + info->value_size <= 24 &&
++			!break_names;
++
++		printf("key:%c", break_names ? '\n' : ' ');
++		print_hex(key, info->key_size, " ");
++
++		printf(single_line ? "  " : "\n");
++
++		printf("value:%c", break_names ? '\n' : ' ');
++		print_hex(value, info->value_size, " ");
++
++		printf("\n");
++	} else {
++		unsigned int i, n;
++
++		n = get_possible_cpus();
++
++		printf("key:\n");
++		print_hex(key, info->key_size, " ");
++		printf("\n");
++		for (i = 0; i < n; i++) {
++			printf("value (CPU %02d):%c",
++			       i, info->value_size > 16 ? '\n' : ' ');
++			print_hex(value + i * info->value_size,
++				  info->value_size, " ");
++			printf("\n");
++		}
++	}
++}
++
++static char **parse_bytes(char **argv, const char *name, unsigned char *val,
++			  unsigned int n)
++{
++	unsigned int i = 0;
++	char *endptr;
++
++	while (i < n && argv[i]) {
++		val[i] = strtoul(argv[i], &endptr, 0);
++		if (*endptr) {
++			err("error parsing byte: %s\n", argv[i]);
++			break;
++		}
++		i++;
++	}
++
++	if (i != n) {
++		err("%s expected %d bytes got %d\n", name, n, i);
++		return NULL;
++	}
++
++	return argv + i;
++}
++
++static int parse_elem(char **argv, struct bpf_map_info *info,
++		      void *key, void *value, __u32 key_size, __u32 value_size,
++		      __u32 *flags, __u32 **value_fd)
++{
++	if (!*argv) {
++		if (!key && !value)
++			return 0;
++		err("did not find %s\n", key ? "key" : "value");
++		return -1;
++	}
++
++	if (is_prefix(*argv, "key")) {
++		if (!key) {
++			if (key_size)
++				err("duplicate key\n");
++			else
++				err("unnecessary key\n");
++			return -1;
++		}
++
++		argv = parse_bytes(argv + 1, "key", key, key_size);
++		if (!argv)
++			return -1;
++
++		return parse_elem(argv, info, NULL, value, key_size, value_size,
++				  flags, value_fd);
++	} else if (is_prefix(*argv, "value")) {
++		int fd;
++
++		if (!value) {
++			if (value_size)
++				err("duplicate value\n");
++			else
++				err("unnecessary value\n");
++			return -1;
++		}
++
++		argv++;
++
++		if (map_is_map_of_maps(info->type)) {
++			int argc = 2;
++
++			if (value_size != 4) {
++				err("value smaller than 4B for map in map?\n");
++				return -1;
++			}
++			if (!argv[0] || !argv[1]) {
++				err("not enough value arguments for map in map\n");
++				return -1;
++			}
++
++			fd = map_parse_fd(&argc, &argv);
++			if (fd < 0)
++				return -1;
++
++			*value_fd = value;
++			**value_fd = fd;
++		} else if (map_is_map_of_progs(info->type)) {
++			int argc = 2;
++
++			if (value_size != 4) {
++				err("value smaller than 4B for map of progs?\n");
++				return -1;
++			}
++			if (!argv[0] || !argv[1]) {
++				err("not enough value arguments for map of progs\n");
++				return -1;
++			}
++
++			fd = prog_parse_fd(&argc, &argv);
++			if (fd < 0)
++				return -1;
++
++			*value_fd = value;
++			**value_fd = fd;
++		} else {
++			argv = parse_bytes(argv, "value", value, value_size);
++			if (!argv)
++				return -1;
++		}
++
++		return parse_elem(argv, info, key, NULL, key_size, value_size,
++				  flags, NULL);
++	} else if (is_prefix(*argv, "any") || is_prefix(*argv, "noexist") ||
++		   is_prefix(*argv, "exist")) {
++		if (!flags) {
++			err("flags specified multiple times: %s\n", *argv);
++			return -1;
++		}
++
++		if (is_prefix(*argv, "any"))
++			*flags = BPF_ANY;
++		else if (is_prefix(*argv, "noexist"))
++			*flags = BPF_NOEXIST;
++		else if (is_prefix(*argv, "exist"))
++			*flags = BPF_EXIST;
++
++		return parse_elem(argv + 1, info, key, value, key_size,
++				  value_size, NULL, value_fd);
++	}
++
++	err("expected key or value, got: %s\n", *argv);
++	return -1;
++}
++
++static int show_map_close(int fd, struct bpf_map_info *info)
++{
++	char *memlock;
++
++	memlock = get_fdinfo(fd, "memlock");
++	close(fd);
++
++	printf("%u: ", info->id);
++	if (info->type < ARRAY_SIZE(map_type_name))
++		printf("%s  ", map_type_name[info->type]);
++	else
++		printf("type %u  ", info->type);
++
++	if (*info->name)
++		printf("name %s  ", info->name);
++
++	printf("flags 0x%x\n", info->map_flags);
++	printf("\tkey %uB  value %uB  max_entries %u",
++	       info->key_size, info->value_size, info->max_entries);
++
++	if (memlock)
++		printf("  memlock %sB", memlock);
++	free(memlock);
++
++	printf("\n");
++
++	return 0;
++}
++
++static int do_show(int argc, char **argv)
++{
++	struct bpf_map_info info = {};
++	__u32 len = sizeof(info);
++	__u32 id = 0;
++	int err;
++	int fd;
++
++	if (argc == 2) {
++		fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
++		if (fd < 0)
++			return -1;
++
++		return show_map_close(fd, &info);
++	}
++
++	if (argc)
++		return BAD_ARG();
++
++	while (true) {
++		err = bpf_map_get_next_id(id, &id);
++		if (err) {
++			if (errno == ENOENT)
++				break;
++			err("can't get next map: %s\n", strerror(errno));
++			if (errno == EINVAL)
++				err("kernel too old?\n");
++			return -1;
++		}
++
++		fd = bpf_map_get_fd_by_id(id);
++		if (fd < 0) {
++			err("can't get map by id (%u): %s\n",
++			    id, strerror(errno));
++			return -1;
++		}
++
++		err = bpf_obj_get_info_by_fd(fd, &info, &len);
++		if (err) {
++			err("can't get map info: %s\n", strerror(errno));
++			close(fd);
++			return -1;
++		}
++
++		show_map_close(fd, &info);
++	}
++
++	return errno == ENOENT ? 0 : -1;
++}
++
++static int do_dump(int argc, char **argv)
++{
++	void *key, *value, *prev_key;
++	unsigned int num_elems = 0;
++	struct bpf_map_info info = {};
++	__u32 len = sizeof(info);
++	int err;
++	int fd;
++
++	if (argc != 2)
++		usage();
++
++	fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
++	if (fd < 0)
++		return -1;
++
++	if (map_is_map_of_maps(info.type) || map_is_map_of_progs(info.type)) {
++		err("Dumping maps of maps and program maps not supported\n");
++		close(fd);
++		return -1;
++	}
++
++	key = malloc(info.key_size);
++	value = alloc_value(&info);
++	if (!key || !value) {
++		err("mem alloc failed\n");
++		err = -1;
++		goto exit_free;
++	}
++
++	prev_key = NULL;
++	while (true) {
++		err = bpf_map_get_next_key(fd, prev_key, key);
++		if (err) {
++			if (errno == ENOENT)
++				err = 0;
++			break;
++		}
++
++		if (!bpf_map_lookup_elem(fd, key, value)) {
++			print_entry(&info, key, value);
++		} else {
++			info("can't lookup element with key: ");
++			print_hex(key, info.key_size, " ");
++			printf("\n");
++		}
++
++		prev_key = key;
++		num_elems++;
++	}
++
++	printf("Found %u element%s\n", num_elems, num_elems != 1 ? "s" : "");
++
++exit_free:
++	free(key);
++	free(value);
++	close(fd);
++
++	return err;
++}
++
++static int do_update(int argc, char **argv)
++{
++	struct bpf_map_info info = {};
++	__u32 len = sizeof(info);
++	__u32 *value_fd = NULL;
++	__u32 flags = BPF_ANY;
++	void *key, *value;
++	int fd, err;
++
++	if (argc < 2)
++		usage();
++
++	fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
++	if (fd < 0)
++		return -1;
++
++	key = malloc(info.key_size);
++	value = alloc_value(&info);
++	if (!key || !value) {
++		err("mem alloc failed");
++		err = -1;
++		goto exit_free;
++	}
++
++	err = parse_elem(argv, &info, key, value, info.key_size,
++			 info.value_size, &flags, &value_fd);
++	if (err)
++		goto exit_free;
++
++	err = bpf_map_update_elem(fd, key, value, flags);
++	if (err) {
++		err("update failed: %s\n", strerror(errno));
++		goto exit_free;
++	}
++
++exit_free:
++	if (value_fd)
++		close(*value_fd);
++	free(key);
++	free(value);
++	close(fd);
++
++	return err;
++}
++
++static int do_lookup(int argc, char **argv)
++{
++	struct bpf_map_info info = {};
++	__u32 len = sizeof(info);
++	void *key, *value;
++	int err;
++	int fd;
++
++	if (argc < 2)
++		usage();
++
++	fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
++	if (fd < 0)
++		return -1;
++
++	key = malloc(info.key_size);
++	value = alloc_value(&info);
++	if (!key || !value) {
++		err("mem alloc failed");
++		err = -1;
++		goto exit_free;
++	}
++
++	err = parse_elem(argv, &info, key, NULL, info.key_size, 0, NULL, NULL);
++	if (err)
++		goto exit_free;
++
++	err = bpf_map_lookup_elem(fd, key, value);
++	if (!err) {
++		print_entry(&info, key, value);
++	} else if (errno == ENOENT) {
++		printf("key:\n");
++		print_hex(key, info.key_size, " ");
++		printf("\n\nNot found\n");
++	} else {
++		err("lookup failed: %s\n", strerror(errno));
++	}
++
++exit_free:
++	free(key);
++	free(value);
++	close(fd);
++
++	return err;
++}
++
++static int do_getnext(int argc, char **argv)
++{
++	struct bpf_map_info info = {};
++	__u32 len = sizeof(info);
++	void *key, *nextkey;
++	int err;
++	int fd;
++
++	if (argc < 2)
++		usage();
++
++	fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
++	if (fd < 0)
++		return -1;
++
++	key = malloc(info.key_size);
++	nextkey = malloc(info.key_size);
++	if (!key || !nextkey) {
++		err("mem alloc failed");
++		err = -1;
++		goto exit_free;
++	}
++
++	if (argc) {
++		err = parse_elem(argv, &info, key, NULL, info.key_size, 0,
++				 NULL, NULL);
++		if (err)
++			goto exit_free;
++	} else {
++		free(key);
++		key = NULL;
++	}
++
++	err = bpf_map_get_next_key(fd, key, nextkey);
++	if (err) {
++		err("can't get next key: %s\n", strerror(errno));
++		goto exit_free;
++	}
++
++	if (key) {
++		printf("key:\n");
++		print_hex(key, info.key_size, " ");
++		printf("\n");
++	} else {
++		printf("key: None\n");
++	}
++
++	printf("next key:\n");
++	print_hex(nextkey, info.key_size, " ");
++	printf("\n");
++
++exit_free:
++	free(nextkey);
++	free(key);
++	close(fd);
++
++	return err;
++}
++
++static int do_delete(int argc, char **argv)
++{
++	struct bpf_map_info info = {};
++	__u32 len = sizeof(info);
++	void *key;
++	int err;
++	int fd;
++
++	if (argc < 2)
++		usage();
++
++	fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
++	if (fd < 0)
++		return -1;
++
++	key = malloc(info.key_size);
++	if (!key) {
++		err("mem alloc failed");
++		err = -1;
++		goto exit_free;
++	}
++
++	err = parse_elem(argv, &info, key, NULL, info.key_size, 0, NULL, NULL);
++	if (err)
++		goto exit_free;
++
++	err = bpf_map_delete_elem(fd, key);
++	if (err)
++		err("delete failed: %s\n", strerror(errno));
++
++exit_free:
++	free(key);
++	close(fd);
++
++	return err;
++}
++
++static int do_pin(int argc, char **argv)
++{
++	return do_pin_any(argc, argv, bpf_map_get_fd_by_id);
++}
++
++static int do_help(int argc, char **argv)
++{
++	fprintf(stderr,
++		"Usage: %s %s show   [MAP]\n"
++		"       %s %s dump    MAP\n"
++		"       %s %s update  MAP  key BYTES value VALUE [UPDATE_FLAGS]\n"
++		"       %s %s lookup  MAP  key BYTES\n"
++		"       %s %s getnext MAP [key BYTES]\n"
++		"       %s %s delete  MAP  key BYTES\n"
++		"       %s %s pin     MAP  FILE\n"
++		"       %s %s help\n"
++		"\n"
++		"       MAP := { id MAP_ID | pinned FILE }\n"
++		"       " HELP_SPEC_PROGRAM "\n"
++		"       VALUE := { BYTES | MAP | PROG }\n"
++		"       UPDATE_FLAGS := { any | exist | noexist }\n"
++		"",
++		bin_name, argv[-2], bin_name, argv[-2], bin_name, argv[-2],
++		bin_name, argv[-2], bin_name, argv[-2], bin_name, argv[-2],
++		bin_name, argv[-2], bin_name, argv[-2]);
++
++	return 0;
++}
++
++static const struct cmd cmds[] = {
++	{ "show",	do_show },
++	{ "help",	do_help },
++	{ "dump",	do_dump },
++	{ "update",	do_update },
++	{ "lookup",	do_lookup },
++	{ "getnext",	do_getnext },
++	{ "delete",	do_delete },
++	{ "pin",	do_pin },
++	{ 0 }
++};
++
++int do_map(int argc, char **argv)
++{
++	return cmd_select(cmds, argc, argv, do_help);
++}
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+new file mode 100644
+index 000000000000..421ba89ce86a
+--- /dev/null
++++ b/tools/bpf/bpftool/prog.c
+@@ -0,0 +1,456 @@
++/*
++ * Copyright (C) 2017 Netronome Systems, Inc.
++ *
++ * This software is dual licensed under the GNU General License Version 2,
++ * June 1991 as shown in the file COPYING in the top-level directory of this
++ * source tree or the BSD 2-Clause License provided below.  You have the
++ * option to license this software under the complete terms of either license.
++ *
++ * The BSD 2-Clause License:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      1. Redistributions of source code must retain the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer.
++ *
++ *      2. Redistributions in binary form must reproduce the above
++ *         copyright notice, this list of conditions and the following
++ *         disclaimer in the documentation and/or other materials
++ *         provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++/* Author: Jakub Kicinski <kubakici@wp.pl> */
++
++#include <errno.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++#include <unistd.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++
++#include <bpf.h>
++
++#include "main.h"
++
++static const char * const prog_type_name[] = {
++	[BPF_PROG_TYPE_UNSPEC]		= "unspec",
++	[BPF_PROG_TYPE_SOCKET_FILTER]	= "socket_filter",
++	[BPF_PROG_TYPE_KPROBE]		= "kprobe",
++	[BPF_PROG_TYPE_SCHED_CLS]	= "sched_cls",
++	[BPF_PROG_TYPE_SCHED_ACT]	= "sched_act",
++	[BPF_PROG_TYPE_TRACEPOINT]	= "tracepoint",
++	[BPF_PROG_TYPE_XDP]		= "xdp",
++	[BPF_PROG_TYPE_PERF_EVENT]	= "perf_event",
++	[BPF_PROG_TYPE_CGROUP_SKB]	= "cgroup_skb",
++	[BPF_PROG_TYPE_CGROUP_SOCK]	= "cgroup_sock",
++	[BPF_PROG_TYPE_LWT_IN]		= "lwt_in",
++	[BPF_PROG_TYPE_LWT_OUT]		= "lwt_out",
++	[BPF_PROG_TYPE_LWT_XMIT]	= "lwt_xmit",
++	[BPF_PROG_TYPE_SOCK_OPS]	= "sock_ops",
++	[BPF_PROG_TYPE_SK_SKB]		= "sk_skb",
++};
++
++static void print_boot_time(__u64 nsecs, char *buf, unsigned int size)
++{
++	struct timespec real_time_ts, boot_time_ts;
++	time_t wallclock_secs;
++	struct tm load_tm;
++
++	buf[--size] = '\0';
++
++	if (clock_gettime(CLOCK_REALTIME, &real_time_ts) ||
++	    clock_gettime(CLOCK_BOOTTIME, &boot_time_ts)) {
++		perror("Can't read clocks");
++		snprintf(buf, size, "%llu", nsecs / 1000000000);
++		return;
++	}
++
++	wallclock_secs = (real_time_ts.tv_sec - boot_time_ts.tv_sec) +
++		nsecs / 1000000000;
++
++	if (!localtime_r(&wallclock_secs, &load_tm)) {
++		snprintf(buf, size, "%llu", nsecs / 1000000000);
++		return;
++	}
++
++	strftime(buf, size, "%b %d/%H:%M", &load_tm);
++}
++
++static int prog_fd_by_tag(unsigned char *tag)
++{
++	struct bpf_prog_info info = {};
++	__u32 len = sizeof(info);
++	unsigned int id = 0;
++	int err;
++	int fd;
++
++	while (true) {
++		err = bpf_prog_get_next_id(id, &id);
++		if (err) {
++			err("%s\n", strerror(errno));
++			return -1;
++		}
++
++		fd = bpf_prog_get_fd_by_id(id);
++		if (fd < 0) {
++			err("can't get prog by id (%u): %s\n",
++			    id, strerror(errno));
++			return -1;
++		}
++
++		err = bpf_obj_get_info_by_fd(fd, &info, &len);
++		if (err) {
++			err("can't get prog info (%u): %s\n",
++			    id, strerror(errno));
++			close(fd);
++			return -1;
++		}
++
++		if (!memcmp(tag, info.tag, BPF_TAG_SIZE))
++			return fd;
++
++		close(fd);
++	}
++}
++
++int prog_parse_fd(int *argc, char ***argv)
++{
++	int fd;
++
++	if (is_prefix(**argv, "id")) {
++		unsigned int id;
++		char *endptr;
++
++		NEXT_ARGP();
++
++		id = strtoul(**argv, &endptr, 0);
++		if (*endptr) {
++			err("can't parse %s as ID\n", **argv);
++			return -1;
++		}
++		NEXT_ARGP();
++
++		fd = bpf_prog_get_fd_by_id(id);
++		if (fd < 0)
++			err("get by id (%u): %s\n", id, strerror(errno));
++		return fd;
++	} else if (is_prefix(**argv, "tag")) {
++		unsigned char tag[BPF_TAG_SIZE];
++
++		NEXT_ARGP();
++
++		if (sscanf(**argv, BPF_TAG_FMT, tag, tag + 1, tag + 2,
++			   tag + 3, tag + 4, tag + 5, tag + 6, tag + 7)
++		    != BPF_TAG_SIZE) {
++			err("can't parse tag\n");
++			return -1;
++		}
++		NEXT_ARGP();
++
++		return prog_fd_by_tag(tag);
++	} else if (is_prefix(**argv, "pinned")) {
++		char *path;
++
++		NEXT_ARGP();
++
++		path = **argv;
++		NEXT_ARGP();
++
++		return open_obj_pinned_any(path, BPF_OBJ_PROG);
++	}
++
++	err("expected 'id', 'tag' or 'pinned', got: '%s'?\n", **argv);
++	return -1;
++}
++
++static void show_prog_maps(int fd, u32 num_maps)
++{
++	struct bpf_prog_info info = {};
++	__u32 len = sizeof(info);
++	__u32 map_ids[num_maps];
++	unsigned int i;
++	int err;
++
++	info.nr_map_ids = num_maps;
++	info.map_ids = ptr_to_u64(map_ids);
++
++	err = bpf_obj_get_info_by_fd(fd, &info, &len);
++	if (err || !info.nr_map_ids)
++		return;
++
++	printf("  map_ids ");
++	for (i = 0; i < info.nr_map_ids; i++)
++		printf("%u%s", map_ids[i],
++		       i == info.nr_map_ids - 1 ? "" : ",");
++}
++
++static int show_prog(int fd)
++{
++	struct bpf_prog_info info = {};
++	__u32 len = sizeof(info);
++	char *memlock;
++	int err;
++
++	err = bpf_obj_get_info_by_fd(fd, &info, &len);
++	if (err) {
++		err("can't get prog info: %s\n", strerror(errno));
++		return -1;
++	}
++
++	printf("%u: ", info.id);
++	if (info.type < ARRAY_SIZE(prog_type_name))
++		printf("%s  ", prog_type_name[info.type]);
++	else
++		printf("type %u  ", info.type);
++
++	if (*info.name)
++		printf("name %s  ", info.name);
++
++	printf("tag ");
++	print_hex(info.tag, BPF_TAG_SIZE, ":");
++	printf("\n");
++
++	if (info.load_time) {
++		char buf[32];
++
++		print_boot_time(info.load_time, buf, sizeof(buf));
++
++		/* Piggy back on load_time, since 0 uid is a valid one */
++		printf("\tloaded_at %s  uid %u\n", buf, info.created_by_uid);
++	}
++
++	printf("\txlated %uB", info.xlated_prog_len);
++
++	if (info.jited_prog_len)
++		printf("  jited %uB", info.jited_prog_len);
++	else
++		printf("  not jited");
++
++	memlock = get_fdinfo(fd, "memlock");
++	if (memlock)
++		printf("  memlock %sB", memlock);
++	free(memlock);
++
++	if (info.nr_map_ids)
++		show_prog_maps(fd, info.nr_map_ids);
++
++	printf("\n");
++
++	return 0;
++}
++
++static int do_show(int argc, char **argv)
++{	__u32 id = 0;
++	int err;
++	int fd;
++
++	if (argc == 2) {
++		fd = prog_parse_fd(&argc, &argv);
++		if (fd < 0)
++			return -1;
++
++		return show_prog(fd);
++	}
++
++	if (argc)
++		return BAD_ARG();
++
++	while (true) {
++		err = bpf_prog_get_next_id(id, &id);
++		if (err) {
++			if (errno == ENOENT)
++				break;
++			err("can't get next program: %s\n", strerror(errno));
++			if (errno == EINVAL)
++				err("kernel too old?\n");
++			return -1;
++		}
++
++		fd = bpf_prog_get_fd_by_id(id);
++		if (fd < 0) {
++			err("can't get prog by id (%u): %s\n",
++			    id, strerror(errno));
++			return -1;
++		}
++
++		err = show_prog(fd);
++		close(fd);
++		if (err)
++			return err;
++	}
++
++	return 0;
++}
++
++static int do_dump(int argc, char **argv)
++{
++	struct bpf_prog_info info = {};
++	__u32 len = sizeof(info);
++	bool can_disasm = false;
++	unsigned int buf_size;
++	char *filepath = NULL;
++	bool opcodes = false;
++	unsigned char *buf;
++	__u32 *member_len;
++	__u64 *member_ptr;
++	ssize_t n;
++	int err;
++	int fd;
++
++	if (is_prefix(*argv, "jited")) {
++		member_len = &info.jited_prog_len;
++		member_ptr = &info.jited_prog_insns;
++		can_disasm = true;
++	} else if (is_prefix(*argv, "xlated")) {
++		member_len = &info.xlated_prog_len;
++		member_ptr = &info.xlated_prog_insns;
++	} else {
++		err("expected 'xlated' or 'jited', got: %s\n", *argv);
++		return -1;
++	}
++	NEXT_ARG();
++
++	if (argc < 2)
++		usage();
++
++	fd = prog_parse_fd(&argc, &argv);
++	if (fd < 0)
++		return -1;
++
++	if (is_prefix(*argv, "file")) {
++		NEXT_ARG();
++		if (!argc) {
++			err("expected file path\n");
++			return -1;
++		}
++
++		filepath = *argv;
++		NEXT_ARG();
++	} else if (is_prefix(*argv, "opcodes")) {
++		opcodes = true;
++		NEXT_ARG();
++	}
++
++	if (!filepath && !can_disasm) {
++		err("expected 'file' got %s\n", *argv);
++		return -1;
++	}
++	if (argc) {
++		usage();
++		return -1;
++	}
++
++	err = bpf_obj_get_info_by_fd(fd, &info, &len);
++	if (err) {
++		err("can't get prog info: %s\n", strerror(errno));
++		return -1;
++	}
++
++	if (!*member_len) {
++		info("no instructions returned\n");
++		close(fd);
++		return 0;
++	}
++
++	buf_size = *member_len;
++
++	buf = malloc(buf_size);
++	if (!buf) {
++		err("mem alloc failed\n");
++		close(fd);
++		return -1;
++	}
++
++	memset(&info, 0, sizeof(info));
++
++	*member_ptr = ptr_to_u64(buf);
++	*member_len = buf_size;
++
++	err = bpf_obj_get_info_by_fd(fd, &info, &len);
++	close(fd);
++	if (err) {
++		err("can't get prog info: %s\n", strerror(errno));
++		goto err_free;
++	}
++
++	if (*member_len > buf_size) {
++		info("too many instructions returned\n");
++		goto err_free;
++	}
++
++	if (filepath) {
++		fd = open(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
++		if (fd < 0) {
++			err("can't open file %s: %s\n", filepath,
++			    strerror(errno));
++			goto err_free;
++		}
++
++		n = write(fd, buf, *member_len);
++		close(fd);
++		if (n != *member_len) {
++			err("error writing output file: %s\n",
++			    n < 0 ? strerror(errno) : "short write");
++			goto err_free;
++		}
++	} else {
++		disasm_print_insn(buf, *member_len, opcodes);
++	}
++
++	free(buf);
++
++	return 0;
++
++err_free:
++	free(buf);
++	return -1;
++}
++
++static int do_pin(int argc, char **argv)
++{
++	return do_pin_any(argc, argv, bpf_prog_get_fd_by_id);
++}
++
++static int do_help(int argc, char **argv)
++{
++	fprintf(stderr,
++		"Usage: %s %s show [PROG]\n"
++		"       %s %s dump xlated PROG  file FILE\n"
++		"       %s %s dump jited  PROG [file FILE] [opcodes]\n"
++		"       %s %s pin   PROG FILE\n"
++		"       %s %s help\n"
++		"\n"
++		"       " HELP_SPEC_PROGRAM "\n"
++		"",
++		bin_name, argv[-2], bin_name, argv[-2], bin_name, argv[-2],
++		bin_name, argv[-2], bin_name, argv[-2]);
++
++	return 0;
++}
++
++static const struct cmd cmds[] = {
++	{ "show",	do_show },
++	{ "dump",	do_dump },
++	{ "pin",	do_pin },
++	{ 0 }
++};
++
++int do_prog(int argc, char **argv)
++{
++	return cmd_select(cmds, argc, argv, do_help);
++}
+-- 
+cgit 1.2.3-1.el7
+
+

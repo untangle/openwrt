@@ -1,0 +1,40 @@
+From 21567eded9805acbf69807671eb94d3536f797d0 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Fri, 15 Dec 2017 16:19:30 -0800
+Subject: [PATCH 52/95] libbpf: fix Makefile exit code if libelf not found
+
+/bin/sh's exit does not recognize -1 as a number, leading to
+the following error message:
+
+/bin/sh: 1: exit: Illegal number: -1
+
+Use 1 as the exit code.
+
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/lib/bpf/Makefile | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/lib/bpf/Makefile b/tools/lib/bpf/Makefile
+index 4555304dc18e..8ed43ae9db9b 100644
+--- a/tools/lib/bpf/Makefile
++++ b/tools/lib/bpf/Makefile
+@@ -213,10 +213,10 @@ PHONY += force elfdep bpfdep
+ force:
+ 
+ elfdep:
+-	@if [ "$(feature-libelf)" != "1" ]; then echo "No libelf found"; exit -1 ; fi
++	@if [ "$(feature-libelf)" != "1" ]; then echo "No libelf found"; exit 1 ; fi
+ 
+ bpfdep:
+-	@if [ "$(feature-bpf)" != "1" ]; then echo "BPF API too old"; exit -1 ; fi
++	@if [ "$(feature-bpf)" != "1" ]; then echo "BPF API too old"; exit 1 ; fi
+ 
+ # Declare the contents of the .PHONY variable as phony.  We keep that
+ # information in a variable so we can use it in if_changed and friends.
+-- 
+cgit 1.2.3-1.el7
+
+

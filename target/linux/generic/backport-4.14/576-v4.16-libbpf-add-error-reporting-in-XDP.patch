@@ -1,0 +1,367 @@
+From bbf48c18ee0cd18b53712aa09aefa29b64b3976e Mon Sep 17 00:00:00 2001
+From: Eric Leblond <eric@regit.org>
+Date: Tue, 30 Jan 2018 21:55:02 +0100
+Subject: libbpf: add error reporting in XDP
+
+Parse netlink ext attribute to get the error message returned by
+the card. Code is partially take from libnl.
+
+We add netlink.h to the uapi include of tools. And we need to
+avoid include of userspace netlink header to have a successful
+build of sample so nlattr.h has a define to avoid
+the inclusion. Using a direct define could have been an issue
+as NLMSGERR_ATTR_MAX can change in the future.
+
+We also define SOL_NETLINK if not defined to avoid to have to
+copy socket.h for a fixed value.
+
+Signed-off-by: Eric Leblond <eric@regit.org>
+Acked-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ samples/bpf/Makefile   |   2 +-
+ tools/lib/bpf/Build    |   2 +-
+ tools/lib/bpf/bpf.c    |  11 +++
+ tools/lib/bpf/nlattr.c | 187 +++++++++++++++++++++++++++++++++++++++++++++++++
+ tools/lib/bpf/nlattr.h |  72 +++++++++++++++++++
+ 5 files changed, 272 insertions(+), 2 deletions(-)
+ create mode 100644 tools/lib/bpf/nlattr.c
+ create mode 100644 tools/lib/bpf/nlattr.h
+
+diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
+index 64335bb94f9f..ec3fc8d88e87 100644
+--- a/samples/bpf/Makefile
++++ b/samples/bpf/Makefile
+@@ -45,7 +45,7 @@ hostprogs-y += xdp_rxq_info
+ hostprogs-y += syscall_tp
+ 
+ # Libbpf dependencies
+-LIBBPF := ../../tools/lib/bpf/bpf.o
++LIBBPF := ../../tools/lib/bpf/bpf.o ../../tools/lib/bpf/nlattr.o
+ CGROUP_HELPERS := ../../tools/testing/selftests/bpf/cgroup_helpers.o
+ 
+ test_lru_dist-objs := test_lru_dist.o $(LIBBPF)
+diff --git a/tools/lib/bpf/Build b/tools/lib/bpf/Build
+index d8749756352d..64c679d67109 100644
+--- a/tools/lib/bpf/Build
++++ b/tools/lib/bpf/Build
+@@ -1 +1 @@
+-libbpf-y := libbpf.o bpf.o
++libbpf-y := libbpf.o bpf.o nlattr.o
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index bf2772566240..9c88f6e4156d 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -32,6 +32,10 @@
+ #include <sys/socket.h>
+ #include <errno.h>
+ 
++#ifndef SOL_NETLINK
++#define SOL_NETLINK 270
++#endif
++
+ /*
+  * When building perf, unistd.h is overridden. __NR_bpf is
+  * required to be defined explicitly.
+@@ -436,6 +440,7 @@ int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
+ 	struct nlmsghdr *nh;
+ 	struct nlmsgerr *err;
+ 	socklen_t addrlen;
++	int one = 1;
+ 
+ 	memset(&sa, 0, sizeof(sa));
+ 	sa.nl_family = AF_NETLINK;
+@@ -445,6 +450,11 @@ int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
+ 		return -errno;
+ 	}
+ 
++	if (setsockopt(sock, SOL_NETLINK, NETLINK_EXT_ACK,
++		       &one, sizeof(one)) < 0) {
++		fprintf(stderr, "Netlink error reporting not supported\n");
++	}
++
+ 	if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+ 		ret = -errno;
+ 		goto cleanup;
+@@ -521,6 +531,7 @@ int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
+ 			if (!err->error)
+ 				continue;
+ 			ret = err->error;
++			nla_dump_errormsg(nh);
+ 			goto cleanup;
+ 		case NLMSG_DONE:
+ 			break;
+diff --git a/tools/lib/bpf/nlattr.c b/tools/lib/bpf/nlattr.c
+new file mode 100644
+index 000000000000..4719434278b2
+--- /dev/null
++++ b/tools/lib/bpf/nlattr.c
+@@ -0,0 +1,187 @@
++// SPDX-License-Identifier: LGPL-2.1
++
++/*
++ * NETLINK      Netlink attributes
++ *
++ *	This library is free software; you can redistribute it and/or
++ *	modify it under the terms of the GNU Lesser General Public
++ *	License as published by the Free Software Foundation version 2.1
++ *	of the License.
++ *
++ * Copyright (c) 2003-2013 Thomas Graf <tgraf@suug.ch>
++ */
++
++#include <errno.h>
++#include "nlattr.h"
++#include <linux/rtnetlink.h>
++#include <string.h>
++#include <stdio.h>
++
++static uint16_t nla_attr_minlen[NLA_TYPE_MAX+1] = {
++	[NLA_U8]	= sizeof(uint8_t),
++	[NLA_U16]	= sizeof(uint16_t),
++	[NLA_U32]	= sizeof(uint32_t),
++	[NLA_U64]	= sizeof(uint64_t),
++	[NLA_STRING]	= 1,
++	[NLA_FLAG]	= 0,
++};
++
++static int nla_len(const struct nlattr *nla)
++{
++	return nla->nla_len - NLA_HDRLEN;
++}
++
++static struct nlattr *nla_next(const struct nlattr *nla, int *remaining)
++{
++	int totlen = NLA_ALIGN(nla->nla_len);
++
++	*remaining -= totlen;
++	return (struct nlattr *) ((char *) nla + totlen);
++}
++
++static int nla_ok(const struct nlattr *nla, int remaining)
++{
++	return remaining >= sizeof(*nla) &&
++	       nla->nla_len >= sizeof(*nla) &&
++	       nla->nla_len <= remaining;
++}
++
++static void *nla_data(const struct nlattr *nla)
++{
++	return (char *) nla + NLA_HDRLEN;
++}
++
++static int nla_type(const struct nlattr *nla)
++{
++	return nla->nla_type & NLA_TYPE_MASK;
++}
++
++static int validate_nla(struct nlattr *nla, int maxtype,
++			struct nla_policy *policy)
++{
++	struct nla_policy *pt;
++	unsigned int minlen = 0;
++	int type = nla_type(nla);
++
++	if (type < 0 || type > maxtype)
++		return 0;
++
++	pt = &policy[type];
++
++	if (pt->type > NLA_TYPE_MAX)
++		return 0;
++
++	if (pt->minlen)
++		minlen = pt->minlen;
++	else if (pt->type != NLA_UNSPEC)
++		minlen = nla_attr_minlen[pt->type];
++
++	if (nla_len(nla) < minlen)
++		return -1;
++
++	if (pt->maxlen && nla_len(nla) > pt->maxlen)
++		return -1;
++
++	if (pt->type == NLA_STRING) {
++		char *data = nla_data(nla);
++		if (data[nla_len(nla) - 1] != '\0')
++			return -1;
++	}
++
++	return 0;
++}
++
++static inline int nlmsg_len(const struct nlmsghdr *nlh)
++{
++	return nlh->nlmsg_len - NLMSG_HDRLEN;
++}
++
++/**
++ * Create attribute index based on a stream of attributes.
++ * @arg tb		Index array to be filled (maxtype+1 elements).
++ * @arg maxtype		Maximum attribute type expected and accepted.
++ * @arg head		Head of attribute stream.
++ * @arg len		Length of attribute stream.
++ * @arg policy		Attribute validation policy.
++ *
++ * Iterates over the stream of attributes and stores a pointer to each
++ * attribute in the index array using the attribute type as index to
++ * the array. Attribute with a type greater than the maximum type
++ * specified will be silently ignored in order to maintain backwards
++ * compatibility. If \a policy is not NULL, the attribute will be
++ * validated using the specified policy.
++ *
++ * @see nla_validate
++ * @return 0 on success or a negative error code.
++ */
++static int nla_parse(struct nlattr *tb[], int maxtype, struct nlattr *head, int len,
++		     struct nla_policy *policy)
++{
++	struct nlattr *nla;
++	int rem, err;
++
++	memset(tb, 0, sizeof(struct nlattr *) * (maxtype + 1));
++
++	nla_for_each_attr(nla, head, len, rem) {
++		int type = nla_type(nla);
++
++		if (type > maxtype)
++			continue;
++
++		if (policy) {
++			err = validate_nla(nla, maxtype, policy);
++			if (err < 0)
++				goto errout;
++		}
++
++		if (tb[type])
++			fprintf(stderr, "Attribute of type %#x found multiple times in message, "
++				  "previous attribute is being ignored.\n", type);
++
++		tb[type] = nla;
++	}
++
++	err = 0;
++errout:
++	return err;
++}
++
++/* dump netlink extended ack error message */
++int nla_dump_errormsg(struct nlmsghdr *nlh)
++{
++	struct nla_policy extack_policy[NLMSGERR_ATTR_MAX + 1] = {
++		[NLMSGERR_ATTR_MSG]	= { .type = NLA_STRING },
++		[NLMSGERR_ATTR_OFFS]	= { .type = NLA_U32 },
++	};
++	struct nlattr *tb[NLMSGERR_ATTR_MAX + 1], *attr;
++	struct nlmsgerr *err;
++	char *errmsg = NULL;
++	int hlen, alen;
++
++	/* no TLVs, nothing to do here */
++	if (!(nlh->nlmsg_flags & NLM_F_ACK_TLVS))
++		return 0;
++
++	err = (struct nlmsgerr *)NLMSG_DATA(nlh);
++	hlen = sizeof(*err);
++
++	/* if NLM_F_CAPPED is set then the inner err msg was capped */
++	if (!(nlh->nlmsg_flags & NLM_F_CAPPED))
++		hlen += nlmsg_len(&err->msg);
++
++	attr = (struct nlattr *) ((void *) err + hlen);
++	alen = nlh->nlmsg_len - hlen;
++
++	if (nla_parse(tb, NLMSGERR_ATTR_MAX, attr, alen, extack_policy) != 0) {
++		fprintf(stderr,
++			"Failed to parse extended error attributes\n");
++		return 0;
++	}
++
++	if (tb[NLMSGERR_ATTR_MSG])
++		errmsg = (char *) nla_data(tb[NLMSGERR_ATTR_MSG]);
++
++	fprintf(stderr, "Kernel error message: %s\n", errmsg);
++
++	return 0;
++}
+diff --git a/tools/lib/bpf/nlattr.h b/tools/lib/bpf/nlattr.h
+new file mode 100644
+index 000000000000..931a71f68f93
+--- /dev/null
++++ b/tools/lib/bpf/nlattr.h
+@@ -0,0 +1,72 @@
++/* SPDX-License-Identifier: LGPL-2.1 */
++
++/*
++ * NETLINK      Netlink attributes
++ *
++ *	This library is free software; you can redistribute it and/or
++ *	modify it under the terms of the GNU Lesser General Public
++ *	License as published by the Free Software Foundation version 2.1
++ *	of the License.
++ *
++ * Copyright (c) 2003-2013 Thomas Graf <tgraf@suug.ch>
++ */
++
++#ifndef __NLATTR_H
++#define __NLATTR_H
++
++#include <stdint.h>
++#include <linux/netlink.h>
++/* avoid multiple definition of netlink features */
++#define __LINUX_NETLINK_H
++
++/**
++ * Standard attribute types to specify validation policy
++ */
++enum {
++	NLA_UNSPEC,	/**< Unspecified type, binary data chunk */
++	NLA_U8,		/**< 8 bit integer */
++	NLA_U16,	/**< 16 bit integer */
++	NLA_U32,	/**< 32 bit integer */
++	NLA_U64,	/**< 64 bit integer */
++	NLA_STRING,	/**< NUL terminated character string */
++	NLA_FLAG,	/**< Flag */
++	NLA_MSECS,	/**< Micro seconds (64bit) */
++	NLA_NESTED,	/**< Nested attributes */
++	__NLA_TYPE_MAX,
++};
++
++#define NLA_TYPE_MAX (__NLA_TYPE_MAX - 1)
++
++/**
++ * @ingroup attr
++ * Attribute validation policy.
++ *
++ * See section @core_doc{core_attr_parse,Attribute Parsing} for more details.
++ */
++struct nla_policy {
++	/** Type of attribute or NLA_UNSPEC */
++	uint16_t	type;
++
++	/** Minimal length of payload required */
++	uint16_t	minlen;
++
++	/** Maximal length of payload allowed */
++	uint16_t	maxlen;
++};
++
++/**
++ * @ingroup attr
++ * Iterate over a stream of attributes
++ * @arg pos	loop counter, set to current attribute
++ * @arg head	head of attribute stream
++ * @arg len	length of attribute stream
++ * @arg rem	initialized to len, holds bytes currently remaining in stream
++ */
++#define nla_for_each_attr(pos, head, len, rem) \
++	for (pos = head, rem = len; \
++	     nla_ok(pos, rem); \
++	     pos = nla_next(pos, &(rem)))
++
++int nla_dump_errormsg(struct nlmsghdr *nlh);
++
++#endif /* __NLATTR_H */
+-- 
+cgit 1.2.3-1.el7
+

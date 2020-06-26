@@ -1,0 +1,236 @@
+From 6ebe6dbd6886af07b102aca42e44edbee94a22d9 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Tue, 2 Jan 2018 14:48:36 -0800
+Subject: [PATCH 62/95] tools: bpftool: alias show and list commands
+
+iproute2 seems to accept show and list as aliases.
+Let's do the same thing, and by allowing both bring
+cgroup syntax back in line with maps and progs.
+
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-cgroup.rst | 6 +++---
+ tools/bpf/bpftool/Documentation/bpftool-map.rst    | 6 +++---
+ tools/bpf/bpftool/Documentation/bpftool-prog.rst   | 6 +++---
+ tools/bpf/bpftool/Documentation/bpftool.rst        | 6 +++---
+ tools/bpf/bpftool/bash-completion/bpftool          | 8 ++++----
+ tools/bpf/bpftool/cgroup.c                         | 3 ++-
+ tools/bpf/bpftool/map.c                            | 3 ++-
+ tools/bpf/bpftool/prog.c                           | 3 ++-
+ 8 files changed, 22 insertions(+), 19 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst b/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst
+index 45c71b1f682b..2fe2a1bdbe3e 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst
+@@ -15,12 +15,12 @@ SYNOPSIS
+ 	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
+ 
+ 	*COMMANDS* :=
+-	{ **list** | **attach** | **detach** | **help** }
++	{ **show** | **list** | **attach** | **detach** | **help** }
+ 
+ MAP COMMANDS
+ =============
+ 
+-|	**bpftool** **cgroup list** *CGROUP*
++|	**bpftool** **cgroup { show | list }** *CGROUP*
+ |	**bpftool** **cgroup attach** *CGROUP* *ATTACH_TYPE* *PROG* [*ATTACH_FLAGS*]
+ |	**bpftool** **cgroup detach** *CGROUP* *ATTACH_TYPE* *PROG*
+ |	**bpftool** **cgroup help**
+@@ -31,7 +31,7 @@ MAP COMMANDS
+ 
+ DESCRIPTION
+ ===========
+-	**bpftool cgroup list** *CGROUP*
++	**bpftool cgroup { show | list }** *CGROUP*
+ 		  List all programs attached to the cgroup *CGROUP*.
+ 
+ 		  Output will start with program ID followed by attach type,
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-map.rst b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+index 421cabc417e6..0ab32b312aec 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-map.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+@@ -15,13 +15,13 @@ SYNOPSIS
+ 	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
+ 
+ 	*COMMANDS* :=
+-	{ **show** | **dump** | **update** | **lookup** | **getnext** | **delete**
++	{ **show** | **list** | **dump** | **update** | **lookup** | **getnext** | **delete**
+ 	| **pin** | **help** }
+ 
+ MAP COMMANDS
+ =============
+ 
+-|	**bpftool** **map show**   [*MAP*]
++|	**bpftool** **map { show | list }**   [*MAP*]
+ |	**bpftool** **map dump**    *MAP*
+ |	**bpftool** **map update**  *MAP*  **key** *BYTES*   **value** *VALUE* [*UPDATE_FLAGS*]
+ |	**bpftool** **map lookup**  *MAP*  **key** *BYTES*
+@@ -36,7 +36,7 @@ MAP COMMANDS
+ 
+ DESCRIPTION
+ ===========
+-	**bpftool map show**   [*MAP*]
++	**bpftool map { show | list }**   [*MAP*]
+ 		  Show information about loaded maps.  If *MAP* is specified
+ 		  show information only about given map, otherwise list all
+ 		  maps currently loaded on the system.
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-prog.rst b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+index 81c97c0e9b67..e4ceee7f2dff 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-prog.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+@@ -15,12 +15,12 @@ SYNOPSIS
+ 	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
+ 
+ 	*COMMANDS* :=
+-	{ **show** | **dump xlated** | **dump jited** | **pin** | **load** | **help** }
++	{ **show** | **list** | **dump xlated** | **dump jited** | **pin** | **load** | **help** }
+ 
+ MAP COMMANDS
+ =============
+ 
+-|	**bpftool** **prog show** [*PROG*]
++|	**bpftool** **prog { show | list }** [*PROG*]
+ |	**bpftool** **prog dump xlated** *PROG* [{**file** *FILE* | **opcodes**}]
+ |	**bpftool** **prog dump jited**  *PROG* [{**file** *FILE* | **opcodes**}]
+ |	**bpftool** **prog pin** *PROG* *FILE*
+@@ -31,7 +31,7 @@ MAP COMMANDS
+ 
+ DESCRIPTION
+ ===========
+-	**bpftool prog show** [*PROG*]
++	**bpftool prog { show | list }** [*PROG*]
+ 		  Show information about loaded programs.  If *PROG* is
+ 		  specified show information only about given program, otherwise
+ 		  list all programs currently loaded on the system.
+diff --git a/tools/bpf/bpftool/Documentation/bpftool.rst b/tools/bpf/bpftool/Documentation/bpftool.rst
+index 6732a5a617e4..20689a321ffe 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool.rst
+@@ -22,13 +22,13 @@ SYNOPSIS
+ 	| { **-j** | **--json** } [{ **-p** | **--pretty** }] }
+ 
+ 	*MAP-COMMANDS* :=
+-	{ **show** | **dump** | **update** | **lookup** | **getnext** | **delete**
++	{ **show** | **list** | **dump** | **update** | **lookup** | **getnext** | **delete**
+ 	| **pin** | **help** }
+ 
+-	*PROG-COMMANDS* := { **show** | **dump jited** | **dump xlated** | **pin**
++	*PROG-COMMANDS* := { **show** | **list** | **dump jited** | **dump xlated** | **pin**
+ 	| **load** | **help** }
+ 
+-	*CGROUP-COMMANDS* := { **list** | **attach** | **detach** | **help** }
++	*CGROUP-COMMANDS* := { **show** | **list** | **attach** | **detach** | **help** }
+ 
+ DESCRIPTION
+ ===========
+diff --git a/tools/bpf/bpftool/bash-completion/bpftool b/tools/bpf/bpftool/bash-completion/bpftool
+index 7febee05c8e7..0137866bb8f6 100644
+--- a/tools/bpf/bpftool/bash-completion/bpftool
++++ b/tools/bpf/bpftool/bash-completion/bpftool
+@@ -197,7 +197,7 @@ _bpftool()
+ 
+             local PROG_TYPE='id pinned tag'
+             case $command in
+-                show)
++                show|list)
+                     [[ $prev != "$command" ]] && return 0
+                     COMPREPLY=( $( compgen -W "$PROG_TYPE" -- "$cur" ) )
+                     return 0
+@@ -232,7 +232,7 @@ _bpftool()
+                     ;;
+                 *)
+                     [[ $prev == $object ]] && \
+-                        COMPREPLY=( $( compgen -W 'dump help pin show' -- \
++                        COMPREPLY=( $( compgen -W 'dump help pin show list' -- \
+                             "$cur" ) )
+                     ;;
+             esac
+@@ -240,7 +240,7 @@ _bpftool()
+         map)
+             local MAP_TYPE='id pinned'
+             case $command in
+-                show|dump)
++                show|list|dump)
+                     case $prev in
+                         $command)
+                             COMPREPLY=( $( compgen -W "$MAP_TYPE" -- "$cur" ) )
+@@ -343,7 +343,7 @@ _bpftool()
+                 *)
+                     [[ $prev == $object ]] && \
+                         COMPREPLY=( $( compgen -W 'delete dump getnext help \
+-                            lookup pin show update' -- "$cur" ) )
++                            lookup pin show list update' -- "$cur" ) )
+                     ;;
+             esac
+             ;;
+diff --git a/tools/bpf/bpftool/cgroup.c b/tools/bpf/bpftool/cgroup.c
+index 24091d87bee3..35f5f003df28 100644
+--- a/tools/bpf/bpftool/cgroup.c
++++ b/tools/bpf/bpftool/cgroup.c
+@@ -277,7 +277,7 @@ static int do_help(int argc, char **argv)
+ 	}
+ 
+ 	fprintf(stderr,
+-		"Usage: %s %s list CGROUP\n"
++		"Usage: %s %s { show | list } CGROUP\n"
+ 		"       %s %s attach CGROUP ATTACH_TYPE PROG [ATTACH_FLAGS]\n"
+ 		"       %s %s detach CGROUP ATTACH_TYPE PROG\n"
+ 		"       %s %s help\n"
+@@ -294,6 +294,7 @@ static int do_help(int argc, char **argv)
+ }
+ 
+ static const struct cmd cmds[] = {
++	{ "show",	do_show },
+ 	{ "list",	do_show },
+ 	{ "attach",	do_attach },
+ 	{ "detach",	do_detach },
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index a8c3a33dd185..8d7db9d6b9cd 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -861,7 +861,7 @@ static int do_help(int argc, char **argv)
+ 	}
+ 
+ 	fprintf(stderr,
+-		"Usage: %s %s show   [MAP]\n"
++		"Usage: %s %s { show | list }   [MAP]\n"
+ 		"       %s %s dump    MAP\n"
+ 		"       %s %s update  MAP  key BYTES value VALUE [UPDATE_FLAGS]\n"
+ 		"       %s %s lookup  MAP  key BYTES\n"
+@@ -885,6 +885,7 @@ static int do_help(int argc, char **argv)
+ 
+ static const struct cmd cmds[] = {
+ 	{ "show",	do_show },
++	{ "list",	do_show },
+ 	{ "help",	do_help },
+ 	{ "dump",	do_dump },
+ 	{ "update",	do_update },
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 98f871ed53d6..5577960bffe4 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -836,7 +836,7 @@ static int do_help(int argc, char **argv)
+ 	}
+ 
+ 	fprintf(stderr,
+-		"Usage: %s %s show [PROG]\n"
++		"Usage: %s %s { show | list } [PROG]\n"
+ 		"       %s %s dump xlated PROG [{ file FILE | opcodes }]\n"
+ 		"       %s %s dump jited  PROG [{ file FILE | opcodes }]\n"
+ 		"       %s %s pin   PROG FILE\n"
+@@ -854,6 +854,7 @@ static int do_help(int argc, char **argv)
+ 
+ static const struct cmd cmds[] = {
+ 	{ "show",	do_show },
++	{ "list",	do_show },
+ 	{ "help",	do_help },
+ 	{ "dump",	do_dump },
+ 	{ "pin",	do_pin },
+-- 
+cgit 1.2.3-1.el7
+
+

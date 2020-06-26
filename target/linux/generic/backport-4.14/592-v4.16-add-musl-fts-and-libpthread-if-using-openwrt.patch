@@ -1,0 +1,30 @@
+From 8adf27d18e5335303d9bd0a50d778aa79f953556 Mon Sep 17 00:00:00 2001
+From: Tiffany Kalin <tkalin@untangle.com>
+Date: Thu, 25 Jun 2020 13:50:59 -0600
+Subject: [PATCH 93/95] [PATCH] Add musl-fts and libpthread if using openwrt-musl-gcc
+
+---
+ tools/bpf/bpftool/Makefile | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index 26901ec87361..d8c8302a480e 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -41,7 +41,12 @@ CFLAGS += -O2
+ CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow
+ CFLAGS += -DPACKAGE='"bpftool"' -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf -I$(srctree)/kernel/bpf/
+ CFLAGS += -DBPFTOOL_VERSION='"$(BPFTOOL_VERSION)"'
+-LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
++
++#MUSL libs for openwrt
++ifeq ($(CC), x86_64-openwrt-linux-musl-gcc)
++	LIBS += -lfts -lpthread
++endif
++LIBS += -lelf -lbfd -lopcodes $(LIBBPF) $(LDFLAGS)
+ 
+ INSTALL ?= install
+ RM ?= rm -f
+-- 
+2.20.1
+

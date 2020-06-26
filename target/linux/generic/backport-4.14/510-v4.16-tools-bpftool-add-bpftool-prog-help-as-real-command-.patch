@@ -1,0 +1,35 @@
+From 9f606179c84930ada1e347b6d84bb913c8492fec Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 19 Oct 2017 15:46:22 -0700
+Subject: [PATCH 11/95] tools: bpftool: add `bpftool prog help` as real command i.r.t exit
+ code
+
+Make error messages and return codes more consistent. Specifically, make
+`bpftool prog help` a real command, instead of printing usage by default
+for a non-recognized "help" command. Output is the same, but this makes
+bpftool return with a success value instead of an error.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/prog.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 6c03d2ea3f79..355c14325622 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -475,6 +475,7 @@ static int do_help(int argc, char **argv)
+ 
+ static const struct cmd cmds[] = {
+ 	{ "show",	do_show },
++	{ "help",	do_help },
+ 	{ "dump",	do_dump },
+ 	{ "pin",	do_pin },
+ 	{ 0 }
+-- 
+cgit 1.2.3-1.el7
+
+

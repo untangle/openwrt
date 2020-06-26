@@ -1,0 +1,559 @@
+From 5ccda64d38cc2800e3c7fab42a2fea46d44693e9 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Wed, 13 Dec 2017 15:18:54 +0000
+Subject: [PATCH 49/95] bpftool: implement cgroup bpf operations
+
+This patch adds basic cgroup bpf operations to bpftool:
+cgroup list, attach and detach commands.
+
+Usage is described in the corresponding man pages,
+and examples are provided.
+
+Syntax:
+$ bpftool cgroup list CGROUP
+$ bpftool cgroup attach CGROUP ATTACH_TYPE PROG [ATTACH_FLAGS]
+$ bpftool cgroup detach CGROUP ATTACH_TYPE PROG
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Martin KaFai Lau <kafai@fb.com>
+Cc: Quentin Monnet <quentin.monnet@netronome.com>
+Reviewed-by: David Ahern <dsahern@gmail.com>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-cgroup.rst | 118 ++++++++
+ tools/bpf/bpftool/Documentation/bpftool-map.rst    |   2 +-
+ tools/bpf/bpftool/Documentation/bpftool-prog.rst   |   2 +-
+ tools/bpf/bpftool/Documentation/bpftool.rst        |   6 +-
+ tools/bpf/bpftool/cgroup.c                         | 307 +++++++++++++++++++++
+ tools/bpf/bpftool/main.c                           |   3 +-
+ tools/bpf/bpftool/main.h                           |   1 +
+ 7 files changed, 434 insertions(+), 5 deletions(-)
+ create mode 100644 tools/bpf/bpftool/Documentation/bpftool-cgroup.rst
+ create mode 100644 tools/bpf/bpftool/cgroup.c
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst b/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst
+new file mode 100644
+index 000000000000..45c71b1f682b
+--- /dev/null
++++ b/tools/bpf/bpftool/Documentation/bpftool-cgroup.rst
+@@ -0,0 +1,118 @@
++================
++bpftool-cgroup
++================
++-------------------------------------------------------------------------------
++tool for inspection and simple manipulation of eBPF progs
++-------------------------------------------------------------------------------
++
++:Manual section: 8
++
++SYNOPSIS
++========
++
++	**bpftool** [*OPTIONS*] **cgroup** *COMMAND*
++
++	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
++
++	*COMMANDS* :=
++	{ **list** | **attach** | **detach** | **help** }
++
++MAP COMMANDS
++=============
++
++|	**bpftool** **cgroup list** *CGROUP*
++|	**bpftool** **cgroup attach** *CGROUP* *ATTACH_TYPE* *PROG* [*ATTACH_FLAGS*]
++|	**bpftool** **cgroup detach** *CGROUP* *ATTACH_TYPE* *PROG*
++|	**bpftool** **cgroup help**
++|
++|	*PROG* := { **id** *PROG_ID* | **pinned** *FILE* | **tag** *PROG_TAG* }
++|	*ATTACH_TYPE* := { *ingress* | *egress* | *sock_create* | *sock_ops* | *device* }
++|	*ATTACH_FLAGS* := { *multi* | *override* }
++
++DESCRIPTION
++===========
++	**bpftool cgroup list** *CGROUP*
++		  List all programs attached to the cgroup *CGROUP*.
++
++		  Output will start with program ID followed by attach type,
++		  attach flags and program name.
++
++	**bpftool cgroup attach** *CGROUP* *ATTACH_TYPE* *PROG* [*ATTACH_FLAGS*]
++		  Attach program *PROG* to the cgroup *CGROUP* with attach type
++		  *ATTACH_TYPE* and optional *ATTACH_FLAGS*.
++
++		  *ATTACH_FLAGS* can be one of: **override** if a sub-cgroup installs
++		  some bpf program, the program in this cgroup yields to sub-cgroup
++		  program; **multi** if a sub-cgroup installs some bpf program,
++		  that cgroup program gets run in addition to the program in this
++		  cgroup.
++
++		  Only one program is allowed to be attached to a cgroup with
++		  no attach flags or the **override** flag. Attaching another
++		  program will release old program and attach the new one.
++
++		  Multiple programs are allowed to be attached to a cgroup with
++		  **multi**. They are executed in FIFO order (those that were
++		  attached first, run first).
++
++		  Non-default *ATTACH_FLAGS* are supported by kernel version 4.14
++		  and later.
++
++		  *ATTACH_TYPE* can be on of:
++		  **ingress** ingress path of the inet socket (since 4.10);
++		  **egress** egress path of the inet socket (since 4.10);
++		  **sock_create** opening of an inet socket (since 4.10);
++		  **sock_ops** various socket operations (since 4.12);
++		  **device** device access (since 4.15).
++
++	**bpftool cgroup detach** *CGROUP* *ATTACH_TYPE* *PROG*
++		  Detach *PROG* from the cgroup *CGROUP* and attach type
++		  *ATTACH_TYPE*.
++
++	**bpftool prog help**
++		  Print short help message.
++
++OPTIONS
++=======
++	-h, --help
++		  Print short generic help message (similar to **bpftool help**).
++
++	-v, --version
++		  Print version number (similar to **bpftool version**).
++
++	-j, --json
++		  Generate JSON output. For commands that cannot produce JSON, this
++		  option has no effect.
++
++	-p, --pretty
++		  Generate human-readable JSON output. Implies **-j**.
++
++	-f, --bpffs
++		  Show file names of pinned programs.
++
++EXAMPLES
++========
++|
++| **# mount -t bpf none /sys/fs/bpf/**
++| **# mkdir /sys/fs/cgroup/test.slice**
++| **# bpftool prog load ./device_cgroup.o /sys/fs/bpf/prog**
++| **# bpftool cgroup attach /sys/fs/cgroup/test.slice/ device id 1 allow_multi**
++
++**# bpftool cgroup list /sys/fs/cgroup/test.slice/**
++
++::
++
++    ID       AttachType      AttachFlags     Name
++    1        device          allow_multi     bpf_prog1
++
++|
++| **# bpftool cgroup detach /sys/fs/cgroup/test.slice/ device id 1**
++| **# bpftool cgroup list /sys/fs/cgroup/test.slice/**
++
++::
++
++    ID       AttachType      AttachFlags     Name
++
++SEE ALSO
++========
++	**bpftool**\ (8), **bpftool-prog**\ (8), **bpftool-map**\ (8)
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-map.rst b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+index 9f51a268eb06..421cabc417e6 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-map.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+@@ -128,4 +128,4 @@ EXAMPLES
+ 
+ SEE ALSO
+ ========
+-	**bpftool**\ (8), **bpftool-prog**\ (8)
++	**bpftool**\ (8), **bpftool-prog**\ (8), **bpftool-cgroup**\ (8)
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-prog.rst b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+index ffdb20e8280f..81c97c0e9b67 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-prog.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+@@ -155,4 +155,4 @@ EXAMPLES
+ 
+ SEE ALSO
+ ========
+-	**bpftool**\ (8), **bpftool-map**\ (8)
++	**bpftool**\ (8), **bpftool-map**\ (8), **bpftool-cgroup**\ (8)
+diff --git a/tools/bpf/bpftool/Documentation/bpftool.rst b/tools/bpf/bpftool/Documentation/bpftool.rst
+index f547a0c0aa34..6732a5a617e4 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool.rst
+@@ -16,7 +16,7 @@ SYNOPSIS
+ 
+ 	**bpftool** **version**
+ 
+-	*OBJECT* := { **map** | **program** }
++	*OBJECT* := { **map** | **program** | **cgroup** }
+ 
+ 	*OPTIONS* := { { **-V** | **--version** } | { **-h** | **--help** }
+ 	| { **-j** | **--json** } [{ **-p** | **--pretty** }] }
+@@ -28,6 +28,8 @@ SYNOPSIS
+ 	*PROG-COMMANDS* := { **show** | **dump jited** | **dump xlated** | **pin**
+ 	| **load** | **help** }
+ 
++	*CGROUP-COMMANDS* := { **list** | **attach** | **detach** | **help** }
++
+ DESCRIPTION
+ ===========
+ 	*bpftool* allows for inspection and simple modification of BPF objects
+@@ -53,4 +55,4 @@ OPTIONS
+ 
+ SEE ALSO
+ ========
+-	**bpftool-map**\ (8), **bpftool-prog**\ (8)
++	**bpftool-map**\ (8), **bpftool-prog**\ (8), **bpftool-cgroup**\ (8)
+diff --git a/tools/bpf/bpftool/cgroup.c b/tools/bpf/bpftool/cgroup.c
+new file mode 100644
+index 000000000000..34ca303d72bc
+--- /dev/null
++++ b/tools/bpf/bpftool/cgroup.c
+@@ -0,0 +1,307 @@
++// SPDX-License-Identifier: GPL-2.0+
++// Copyright (C) 2017 Facebook
++// Author: Roman Gushchin <guro@fb.com>
++
++#include <fcntl.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++#include <unistd.h>
++
++#include <bpf.h>
++
++#include "main.h"
++
++#define HELP_SPEC_ATTACH_FLAGS						\
++	"ATTACH_FLAGS := { multi | override }"
++
++#define HELP_SPEC_ATTACH_TYPES						\
++	"ATTACH_TYPE := { ingress | egress | sock_create | sock_ops | device }"
++
++static const char * const attach_type_strings[] = {
++	[BPF_CGROUP_INET_INGRESS] = "ingress",
++	[BPF_CGROUP_INET_EGRESS] = "egress",
++	[BPF_CGROUP_INET_SOCK_CREATE] = "sock_create",
++	[BPF_CGROUP_SOCK_OPS] = "sock_ops",
++	[BPF_CGROUP_DEVICE] = "device",
++	[__MAX_BPF_ATTACH_TYPE] = NULL,
++};
++
++static enum bpf_attach_type parse_attach_type(const char *str)
++{
++	enum bpf_attach_type type;
++
++	for (type = 0; type < __MAX_BPF_ATTACH_TYPE; type++) {
++		if (attach_type_strings[type] &&
++		    is_prefix(str, attach_type_strings[type]))
++			return type;
++	}
++
++	return __MAX_BPF_ATTACH_TYPE;
++}
++
++static int list_bpf_prog(int id, const char *attach_type_str,
++			 const char *attach_flags_str)
++{
++	struct bpf_prog_info info = {};
++	__u32 info_len = sizeof(info);
++	int prog_fd;
++
++	prog_fd = bpf_prog_get_fd_by_id(id);
++	if (prog_fd < 0)
++		return -1;
++
++	if (bpf_obj_get_info_by_fd(prog_fd, &info, &info_len)) {
++		close(prog_fd);
++		return -1;
++	}
++
++	if (json_output) {
++		jsonw_start_object(json_wtr);
++		jsonw_uint_field(json_wtr, "id", info.id);
++		jsonw_string_field(json_wtr, "attach_type",
++				   attach_type_str);
++		jsonw_string_field(json_wtr, "attach_flags",
++				   attach_flags_str);
++		jsonw_string_field(json_wtr, "name", info.name);
++		jsonw_end_object(json_wtr);
++	} else {
++		printf("%-8u %-15s %-15s %-15s\n", info.id,
++		       attach_type_str,
++		       attach_flags_str,
++		       info.name);
++	}
++
++	close(prog_fd);
++	return 0;
++}
++
++static int list_attached_bpf_progs(int cgroup_fd, enum bpf_attach_type type)
++{
++	__u32 prog_ids[1024] = {0};
++	char *attach_flags_str;
++	__u32 prog_cnt, iter;
++	__u32 attach_flags;
++	char buf[32];
++	int ret;
++
++	prog_cnt = ARRAY_SIZE(prog_ids);
++	ret = bpf_prog_query(cgroup_fd, type, 0, &attach_flags, prog_ids,
++			     &prog_cnt);
++	if (ret)
++		return ret;
++
++	if (prog_cnt == 0)
++		return 0;
++
++	switch (attach_flags) {
++	case BPF_F_ALLOW_MULTI:
++		attach_flags_str = "multi";
++		break;
++	case BPF_F_ALLOW_OVERRIDE:
++		attach_flags_str = "override";
++		break;
++	case 0:
++		attach_flags_str = "";
++		break;
++	default:
++		snprintf(buf, sizeof(buf), "unknown(%x)", attach_flags);
++		attach_flags_str = buf;
++	}
++
++	for (iter = 0; iter < prog_cnt; iter++)
++		list_bpf_prog(prog_ids[iter], attach_type_strings[type],
++			      attach_flags_str);
++
++	return 0;
++}
++
++static int do_list(int argc, char **argv)
++{
++	enum bpf_attach_type type;
++	int cgroup_fd;
++	int ret = -1;
++
++	if (argc < 1) {
++		p_err("too few parameters for cgroup list\n");
++		goto exit;
++	} else if (argc > 1) {
++		p_err("too many parameters for cgroup list\n");
++		goto exit;
++	}
++
++	cgroup_fd = open(argv[0], O_RDONLY);
++	if (cgroup_fd < 0) {
++		p_err("can't open cgroup %s\n", argv[1]);
++		goto exit;
++	}
++
++	if (json_output)
++		jsonw_start_array(json_wtr);
++	else
++		printf("%-8s %-15s %-15s %-15s\n", "ID", "AttachType",
++		       "AttachFlags", "Name");
++
++	for (type = 0; type < __MAX_BPF_ATTACH_TYPE; type++) {
++		/*
++		 * Not all attach types may be supported, so it's expected,
++		 * that some requests will fail.
++		 * If we were able to get the list for at least one
++		 * attach type, let's return 0.
++		 */
++		if (list_attached_bpf_progs(cgroup_fd, type) == 0)
++			ret = 0;
++	}
++
++	if (json_output)
++		jsonw_end_array(json_wtr);
++
++	close(cgroup_fd);
++exit:
++	return ret;
++}
++
++static int do_attach(int argc, char **argv)
++{
++	enum bpf_attach_type attach_type;
++	int cgroup_fd, prog_fd;
++	int attach_flags = 0;
++	int ret = -1;
++	int i;
++
++	if (argc < 4) {
++		p_err("too few parameters for cgroup attach\n");
++		goto exit;
++	}
++
++	cgroup_fd = open(argv[0], O_RDONLY);
++	if (cgroup_fd < 0) {
++		p_err("can't open cgroup %s\n", argv[1]);
++		goto exit;
++	}
++
++	attach_type = parse_attach_type(argv[1]);
++	if (attach_type == __MAX_BPF_ATTACH_TYPE) {
++		p_err("invalid attach type\n");
++		goto exit_cgroup;
++	}
++
++	argc -= 2;
++	argv = &argv[2];
++	prog_fd = prog_parse_fd(&argc, &argv);
++	if (prog_fd < 0)
++		goto exit_cgroup;
++
++	for (i = 0; i < argc; i++) {
++		if (is_prefix(argv[i], "multi")) {
++			attach_flags |= BPF_F_ALLOW_MULTI;
++		} else if (is_prefix(argv[i], "override")) {
++			attach_flags |= BPF_F_ALLOW_OVERRIDE;
++		} else {
++			p_err("unknown option: %s\n", argv[i]);
++			goto exit_cgroup;
++		}
++	}
++
++	if (bpf_prog_attach(prog_fd, cgroup_fd, attach_type, attach_flags)) {
++		p_err("failed to attach program");
++		goto exit_prog;
++	}
++
++	if (json_output)
++		jsonw_null(json_wtr);
++
++	ret = 0;
++
++exit_prog:
++	close(prog_fd);
++exit_cgroup:
++	close(cgroup_fd);
++exit:
++	return ret;
++}
++
++static int do_detach(int argc, char **argv)
++{
++	enum bpf_attach_type attach_type;
++	int prog_fd, cgroup_fd;
++	int ret = -1;
++
++	if (argc < 4) {
++		p_err("too few parameters for cgroup detach\n");
++		goto exit;
++	}
++
++	cgroup_fd = open(argv[0], O_RDONLY);
++	if (cgroup_fd < 0) {
++		p_err("can't open cgroup %s\n", argv[1]);
++		goto exit;
++	}
++
++	attach_type = parse_attach_type(argv[1]);
++	if (attach_type == __MAX_BPF_ATTACH_TYPE) {
++		p_err("invalid attach type");
++		goto exit_cgroup;
++	}
++
++	argc -= 2;
++	argv = &argv[2];
++	prog_fd = prog_parse_fd(&argc, &argv);
++	if (prog_fd < 0)
++		goto exit_cgroup;
++
++	if (bpf_prog_detach2(prog_fd, cgroup_fd, attach_type)) {
++		p_err("failed to detach program");
++		goto exit_prog;
++	}
++
++	if (json_output)
++		jsonw_null(json_wtr);
++
++	ret = 0;
++
++exit_prog:
++	close(prog_fd);
++exit_cgroup:
++	close(cgroup_fd);
++exit:
++	return ret;
++}
++
++static int do_help(int argc, char **argv)
++{
++	if (json_output) {
++		jsonw_null(json_wtr);
++		return 0;
++	}
++
++	fprintf(stderr,
++		"Usage: %s %s list CGROUP\n"
++		"       %s %s attach CGROUP ATTACH_TYPE PROG [ATTACH_FLAGS]\n"
++		"       %s %s detach CGROUP ATTACH_TYPE PROG\n"
++		"       %s %s help\n"
++		"\n"
++		"       " HELP_SPEC_ATTACH_TYPES "\n"
++		"       " HELP_SPEC_ATTACH_FLAGS "\n"
++		"       " HELP_SPEC_PROGRAM "\n"
++		"       " HELP_SPEC_OPTIONS "\n"
++		"",
++		bin_name, argv[-2], bin_name, argv[-2],
++		bin_name, argv[-2], bin_name, argv[-2]);
++
++	return 0;
++}
++
++static const struct cmd cmds[] = {
++	{ "list",	do_list },
++	{ "attach",	do_attach },
++	{ "detach",	do_detach },
++	{ "help",	do_help },
++	{ 0 }
++};
++
++int do_cgroup(int argc, char **argv)
++{
++	return cmd_select(cmds, argc, argv, do_help);
++}
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index d294bc8168be..ecd53ccf1239 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -85,7 +85,7 @@ static int do_help(int argc, char **argv)
+ 		"       %s batch file FILE\n"
+ 		"       %s version\n"
+ 		"\n"
+-		"       OBJECT := { prog | map }\n"
++		"       OBJECT := { prog | map | cgroup }\n"
+ 		"       " HELP_SPEC_OPTIONS "\n"
+ 		"",
+ 		bin_name, bin_name, bin_name);
+@@ -173,6 +173,7 @@ static const struct cmd cmds[] = {
+ 	{ "batch",	do_batch },
+ 	{ "prog",	do_prog },
+ 	{ "map",	do_map },
++	{ "cgroup",	do_cgroup },
+ 	{ "version",	do_version },
+ 	{ 0 }
+ };
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index bec1ccbb49c7..8f6d3cac0347 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -115,6 +115,7 @@ int do_pin_fd(int fd, const char *name);
+ 
+ int do_prog(int argc, char **arg);
+ int do_map(int argc, char **arg);
++int do_cgroup(int argc, char **arg);
+ 
+ int prog_parse_fd(int *argc, char ***argv);
+ 
+-- 
+cgit 1.2.3-1.el7
+
+
