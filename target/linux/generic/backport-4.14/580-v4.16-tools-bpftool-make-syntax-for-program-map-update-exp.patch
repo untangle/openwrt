@@ -1,0 +1,37 @@
+From 2148481d5d3111e5e9aa5adc1905fa3539e548c8 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Wed, 7 Feb 2018 20:27:15 -0800
+Subject: [PATCH 81/95] tools: bpftool: make syntax for program map update explicit in man
+ page
+
+Specify in the documentation that when using bpftool to update a map of
+type BPF_MAP_TYPE_PROG_ARRAY, the syntax for the program used as a value
+should use the "id|tag|pinned" keywords convention, as used with
+"bpftool prog" commands.
+
+Fixes: ff69c21a85a4 ("tools: bpftool: add documentation")
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-map.rst | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-map.rst b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+index 0ab32b312aec..457e868bd32f 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-map.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+@@ -31,7 +31,8 @@ MAP COMMANDS
+ |	**bpftool** **map help**
+ |
+ |	*MAP* := { **id** *MAP_ID* | **pinned** *FILE* }
+-|	*VALUE* := { *BYTES* | *MAP* | *PROGRAM* }
++|	*PROG* := { **id** *PROG_ID* | **pinned** *FILE* | **tag** *PROG_TAG* }
++|	*VALUE* := { *BYTES* | *MAP* | *PROG* }
+ |	*UPDATE_FLAGS* := { **any** | **exist** | **noexist** }
+ 
+ DESCRIPTION
+-- 
+cgit 1.2.3-1.el7
+
+

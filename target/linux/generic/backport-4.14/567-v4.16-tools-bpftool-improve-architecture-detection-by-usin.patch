@@ -1,0 +1,192 @@
+From e65935969d0fac9df28d9c49bdbab5d8d8286a20 Mon Sep 17 00:00:00 2001
+From: Jiong Wang <jiong.wang@netronome.com>
+Date: Tue, 16 Jan 2018 16:05:21 -0800
+Subject: [PATCH 68/95] tools: bpftool: improve architecture detection by using ifindex
+
+The current architecture detection method in bpftool is designed for host
+case.
+
+For offload case, we can't use the architecture of "bpftool" itself.
+Instead, we could call the existing "ifindex_to_name_ns" to get DEVNAME,
+then read pci id from /sys/class/dev/DEVNAME/device/vendor, finally we map
+vendor id to bfd arch name which will finally be used to select bfd backend
+for the disassembler.
+
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Jiong Wang <jiong.wang@netronome.com>
+Acked-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/common.c     | 72 ++++++++++++++++++++++++++++++++++++++++++
+ tools/bpf/bpftool/jit_disasm.c | 16 +++++++++-
+ tools/bpf/bpftool/main.h       |  5 ++-
+ tools/bpf/bpftool/prog.c       | 12 ++++++-
+ 4 files changed, 102 insertions(+), 3 deletions(-)
+
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+index 6601c95a9258..0b482c0070e0 100644
+--- a/tools/bpf/bpftool/common.c
++++ b/tools/bpf/bpftool/common.c
+@@ -34,6 +34,7 @@
+ /* Author: Jakub Kicinski <kubakici@wp.pl> */
+ 
+ #include <errno.h>
++#include <fcntl.h>
+ #include <fts.h>
+ #include <libgen.h>
+ #include <mntent.h>
+@@ -433,6 +434,77 @@ ifindex_to_name_ns(__u32 ifindex, __u32 ns_dev, __u32 ns_ino, char *buf)
+ 	return if_indextoname(ifindex, buf);
+ }
+ 
++static int read_sysfs_hex_int(char *path)
++{
++	char vendor_id_buf[8];
++	int len;
++	int fd;
++
++	fd = open(path, O_RDONLY);
++	if (fd < 0) {
++		p_err("Can't open %s: %s", path, strerror(errno));
++		return -1;
++	}
++
++	len = read(fd, vendor_id_buf, sizeof(vendor_id_buf));
++	close(fd);
++	if (len < 0) {
++		p_err("Can't read %s: %s", path, strerror(errno));
++		return -1;
++	}
++	if (len >= (int)sizeof(vendor_id_buf)) {
++		p_err("Value in %s too long", path);
++		return -1;
++	}
++
++	vendor_id_buf[len] = 0;
++
++	return strtol(vendor_id_buf, NULL, 0);
++}
++
++static int read_sysfs_netdev_hex_int(char *devname, const char *entry_name)
++{
++	char full_path[64];
++
++	snprintf(full_path, sizeof(full_path), "/sys/class/net/%s/device/%s",
++		 devname, entry_name);
++
++	return read_sysfs_hex_int(full_path);
++}
++
++const char *ifindex_to_bfd_name_ns(__u32 ifindex, __u64 ns_dev, __u64 ns_ino)
++{
++	char devname[IF_NAMESIZE];
++	int vendor_id;
++	int device_id;
++
++	if (!ifindex_to_name_ns(ifindex, ns_dev, ns_ino, devname)) {
++		p_err("Can't get net device name for ifindex %d: %s", ifindex,
++		      strerror(errno));
++		return NULL;
++	}
++
++	vendor_id = read_sysfs_netdev_hex_int(devname, "vendor");
++	if (vendor_id < 0) {
++		p_err("Can't get device vendor id for %s", devname);
++		return NULL;
++	}
++
++	switch (vendor_id) {
++	case 0x19ee:
++		device_id = read_sysfs_netdev_hex_int(devname, "device");
++		if (device_id != 0x4000 &&
++		    device_id != 0x6000 &&
++		    device_id != 0x6003)
++			p_info("Unknown NFP device ID, assuming it is NFP-6xxx arch");
++		return "NFP-6xxx";
++	default:
++		p_err("Can't get bfd arch name for device vendor id 0x%04x",
++		      vendor_id);
++		return NULL;
++	}
++}
++
+ void print_dev_plain(__u32 ifindex, __u64 ns_dev, __u64 ns_inode)
+ {
+ 	char name[IF_NAMESIZE];
+diff --git a/tools/bpf/bpftool/jit_disasm.c b/tools/bpf/bpftool/jit_disasm.c
+index 57d32e8a1391..87439320ef70 100644
+--- a/tools/bpf/bpftool/jit_disasm.c
++++ b/tools/bpf/bpftool/jit_disasm.c
+@@ -76,7 +76,8 @@ static int fprintf_json(void *out, const char *fmt, ...)
+ 	return 0;
+ }
+ 
+-void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes)
++void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes,
++		       const char *arch)
+ {
+ 	disassembler_ftype disassemble;
+ 	struct disassemble_info info;
+@@ -100,6 +101,19 @@ void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes)
+ 	else
+ 		init_disassemble_info(&info, stdout,
+ 				      (fprintf_ftype) fprintf);
++
++	/* Update architecture info for offload. */
++	if (arch) {
++		const bfd_arch_info_type *inf = bfd_scan_arch(arch);
++
++		if (inf) {
++			bfdf->arch_info = inf;
++		} else {
++			p_err("No libfd support for %s", arch);
++			return;
++		}
++	}
++
+ 	info.arch = bfd_get_arch(bfdf);
+ 	info.mach = bfd_get_mach(bfdf);
+ 	info.buffer = image;
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index 65b526fe6e7e..b8e9584d6246 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -121,7 +121,10 @@ int do_cgroup(int argc, char **arg);
+ 
+ int prog_parse_fd(int *argc, char ***argv);
+ 
+-void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes);
++void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes,
++		       const char *arch);
+ void print_hex_data_json(uint8_t *data, size_t len);
+ 
++const char *ifindex_to_bfd_name_ns(__u32 ifindex, __u64 ns_dev, __u64 ns_ino);
++
+ #endif
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 099e21cf1b5c..e8e2baaf93c2 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -776,7 +776,17 @@ static int do_dump(int argc, char **argv)
+ 		}
+ 	} else {
+ 		if (member_len == &info.jited_prog_len) {
+-			disasm_print_insn(buf, *member_len, opcodes);
++			const char *name = NULL;
++
++			if (info.ifindex) {
++				name = ifindex_to_bfd_name_ns(info.ifindex,
++							      info.netns_dev,
++							      info.netns_ino);
++				if (!name)
++					goto err_free;
++			}
++
++			disasm_print_insn(buf, *member_len, opcodes, name);
+ 		} else {
+ 			kernel_syms_load(&dd);
+ 			if (json_output)
+-- 
+cgit 1.2.3-1.el7
+
+

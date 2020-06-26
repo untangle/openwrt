@@ -1,0 +1,115 @@
+From b4fac96d9a672def4e24c1858adb7e9351471815 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Tue, 2 Jan 2018 14:48:37 -0800
+Subject: [PATCH 63/95] tools: bpftool: remove new lines from errors
+
+It's a little bit unusual for kernel style, but we add the new line
+character to error strings inside the p_err() function.  We do this
+because new lines at the end of error strings will break JSON output.
+
+Fix a few p_err("..\n") which snuck in recently.
+
+Fixes: 5ccda64d38cc ("bpftool: implement cgroup bpf operations")
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/cgroup.c | 18 +++++++++---------
+ tools/bpf/bpftool/prog.c   |  4 ++--
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/tools/bpf/bpftool/cgroup.c b/tools/bpf/bpftool/cgroup.c
+index 35f5f003df28..cae32a61cb18 100644
+--- a/tools/bpf/bpftool/cgroup.c
++++ b/tools/bpf/bpftool/cgroup.c
+@@ -124,16 +124,16 @@ static int do_show(int argc, char **argv)
+ 	int ret = -1;
+ 
+ 	if (argc < 1) {
+-		p_err("too few parameters for cgroup show\n");
++		p_err("too few parameters for cgroup show");
+ 		goto exit;
+ 	} else if (argc > 1) {
+-		p_err("too many parameters for cgroup show\n");
++		p_err("too many parameters for cgroup show");
+ 		goto exit;
+ 	}
+ 
+ 	cgroup_fd = open(argv[0], O_RDONLY);
+ 	if (cgroup_fd < 0) {
+-		p_err("can't open cgroup %s\n", argv[1]);
++		p_err("can't open cgroup %s", argv[1]);
+ 		goto exit;
+ 	}
+ 
+@@ -171,19 +171,19 @@ static int do_attach(int argc, char **argv)
+ 	int i;
+ 
+ 	if (argc < 4) {
+-		p_err("too few parameters for cgroup attach\n");
++		p_err("too few parameters for cgroup attach");
+ 		goto exit;
+ 	}
+ 
+ 	cgroup_fd = open(argv[0], O_RDONLY);
+ 	if (cgroup_fd < 0) {
+-		p_err("can't open cgroup %s\n", argv[1]);
++		p_err("can't open cgroup %s", argv[1]);
+ 		goto exit;
+ 	}
+ 
+ 	attach_type = parse_attach_type(argv[1]);
+ 	if (attach_type == __MAX_BPF_ATTACH_TYPE) {
+-		p_err("invalid attach type\n");
++		p_err("invalid attach type");
+ 		goto exit_cgroup;
+ 	}
+ 
+@@ -199,7 +199,7 @@ static int do_attach(int argc, char **argv)
+ 		} else if (is_prefix(argv[i], "override")) {
+ 			attach_flags |= BPF_F_ALLOW_OVERRIDE;
+ 		} else {
+-			p_err("unknown option: %s\n", argv[i]);
++			p_err("unknown option: %s", argv[i]);
+ 			goto exit_cgroup;
+ 		}
+ 	}
+@@ -229,13 +229,13 @@ static int do_detach(int argc, char **argv)
+ 	int ret = -1;
+ 
+ 	if (argc < 4) {
+-		p_err("too few parameters for cgroup detach\n");
++		p_err("too few parameters for cgroup detach");
+ 		goto exit;
+ 	}
+ 
+ 	cgroup_fd = open(argv[0], O_RDONLY);
+ 	if (cgroup_fd < 0) {
+-		p_err("can't open cgroup %s\n", argv[1]);
++		p_err("can't open cgroup %s", argv[1]);
+ 		goto exit;
+ 	}
+ 
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 5577960bffe4..c6a28be4665c 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -813,12 +813,12 @@ static int do_load(int argc, char **argv)
+ 		usage();
+ 
+ 	if (bpf_prog_load(argv[0], BPF_PROG_TYPE_UNSPEC, &obj, &prog_fd)) {
+-		p_err("failed to load program\n");
++		p_err("failed to load program");
+ 		return -1;
+ 	}
+ 
+ 	if (do_pin_fd(prog_fd, argv[1])) {
+-		p_err("failed to pin program\n");
++		p_err("failed to pin program");
+ 		return -1;
+ 	}
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

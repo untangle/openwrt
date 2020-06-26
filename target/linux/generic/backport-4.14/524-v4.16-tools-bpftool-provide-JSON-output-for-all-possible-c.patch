@@ -1,0 +1,135 @@
+From 004b45c0e51a8b6f20320181a946ba2d1bd3548b Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Mon, 23 Oct 2017 09:24:14 -0700
+Subject: [PATCH 25/95] tools: bpftool: provide JSON output for all possible commands
+
+As all commands can now return JSON output (possibly just a "null"
+value), output of `bpftool --json batch file FILE` should also be fully
+JSON compliant.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/main.c | 25 +++++++++++++++++++++----
+ tools/bpf/bpftool/map.c  | 16 +++++++++++++++-
+ tools/bpf/bpftool/prog.c | 12 +++++++++++-
+ 3 files changed, 47 insertions(+), 6 deletions(-)
+
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index 9989a77fdc4a..55ba0a04c102 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -64,6 +64,11 @@ void usage(void)
+ 
+ static int do_help(int argc, char **argv)
+ {
++	if (json_output) {
++		jsonw_null(json_wtr);
++		return 0;
++	}
++
+ 	fprintf(stderr,
+ 		"Usage: %s OBJECT { COMMAND | help }\n"
+ 		"       %s batch file FILE\n"
+@@ -77,10 +82,22 @@ static int do_help(int argc, char **argv)
+ 
+ static int do_version(int argc, char **argv)
+ {
+-	printf("%s v%d.%d.%d\n", bin_name,
+-	       LINUX_VERSION_CODE >> 16,
+-	       LINUX_VERSION_CODE >> 8 & 0xf,
+-	       LINUX_VERSION_CODE & 0xf);
++	unsigned int version[3];
++
++	version[0] = LINUX_VERSION_CODE >> 16;
++	version[1] = LINUX_VERSION_CODE >> 8 & 0xf;
++	version[2] = LINUX_VERSION_CODE & 0xf;
++
++	if (json_output) {
++		jsonw_start_object(json_wtr);
++		jsonw_name(json_wtr, "version");
++		jsonw_printf(json_wtr, "\"%u.%u.%u\"",
++			     version[0], version[1], version[2]);
++		jsonw_end_object(json_wtr);
++	} else {
++		printf("%s v%u.%u.%u\n", bin_name,
++		       version[0], version[1], version[2]);
++	}
+ 	return 0;
+ }
+ 
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index 86c128c433ba..a611f31f574f 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -651,6 +651,8 @@ exit_free:
+ 	free(value);
+ 	close(fd);
+ 
++	if (!err && json_output)
++		jsonw_null(json_wtr);
+ 	return err;
+ }
+ 
+@@ -812,16 +814,28 @@ exit_free:
+ 	free(key);
+ 	close(fd);
+ 
++	if (!err && json_output)
++		jsonw_null(json_wtr);
+ 	return err;
+ }
+ 
+ static int do_pin(int argc, char **argv)
+ {
+-	return do_pin_any(argc, argv, bpf_map_get_fd_by_id);
++	int err;
++
++	err = do_pin_any(argc, argv, bpf_map_get_fd_by_id);
++	if (!err && json_output)
++		jsonw_null(json_wtr);
++	return err;
+ }
+ 
+ static int do_help(int argc, char **argv)
+ {
++	if (json_output) {
++		jsonw_null(json_wtr);
++		return 0;
++	}
++
+ 	fprintf(stderr,
+ 		"Usage: %s %s show   [MAP]\n"
+ 		"       %s %s dump    MAP\n"
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 41bd5390b4fc..e07f35ff80d1 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -602,11 +602,21 @@ err_free:
+ 
+ static int do_pin(int argc, char **argv)
+ {
+-	return do_pin_any(argc, argv, bpf_prog_get_fd_by_id);
++	int err;
++
++	err = do_pin_any(argc, argv, bpf_prog_get_fd_by_id);
++	if (!err && json_output)
++		jsonw_null(json_wtr);
++	return err;
+ }
+ 
+ static int do_help(int argc, char **argv)
+ {
++	if (json_output) {
++		jsonw_null(json_wtr);
++		return 0;
++	}
++
+ 	fprintf(stderr,
+ 		"Usage: %s %s show [PROG]\n"
+ 		"       %s %s dump xlated PROG [{ file FILE | opcodes }]\n"
+-- 
+cgit 1.2.3-1.el7
+
+

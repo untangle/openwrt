@@ -1,0 +1,190 @@
+From fb982666e380c1632a74495b68b3c33a66e76430 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Wed, 27 Dec 2017 19:16:29 +0000
+Subject: [PATCH 59/95] tools/bpftool: fix bpftool build with bintutils >= 2.9
+
+Bpftool build is broken with binutils version 2.29 and later.
+The cause is commit 003ca0fd2286 ("Refactor disassembler selection")
+in the binutils repo, which changed the disassembler() function
+signature.
+
+Fix this by adding a new "feature" to the tools/build/features
+infrastructure and make it responsible for decision which
+disassembler() function signature to use.
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/Makefile                                | 29 +++++++++++++++++++++++
+ tools/bpf/bpf_jit_disasm.c                        |  7 ++++++
+ tools/bpf/bpftool/Makefile                        | 24 +++++++++++++++++++
+ tools/bpf/bpftool/jit_disasm.c                    |  7 ++++++
+ tools/build/feature/Makefile                      |  4 ++++
+ tools/build/feature/test-disassembler-four-args.c | 15 ++++++++++++
+ 6 files changed, 86 insertions(+)
+ create mode 100644 tools/build/feature/test-disassembler-four-args.c
+
+diff --git a/tools/bpf/Makefile b/tools/bpf/Makefile
+index 07a6697466ef..c8ec0ae16bf0 100644
+--- a/tools/bpf/Makefile
++++ b/tools/bpf/Makefile
+@@ -9,6 +9,35 @@ MAKE = make
+ CFLAGS += -Wall -O2
+ CFLAGS += -D__EXPORTED_HEADERS__ -I../../include/uapi -I../../include
+ 
++ifeq ($(srctree),)
++srctree := $(patsubst %/,%,$(dir $(CURDIR)))
++srctree := $(patsubst %/,%,$(dir $(srctree)))
++endif
++
++FEATURE_USER = .bpf
++FEATURE_TESTS = libbfd disassembler-four-args
++FEATURE_DISPLAY = libbfd disassembler-four-args
++
++check_feat := 1
++NON_CHECK_FEAT_TARGETS := clean bpftool_clean
++ifdef MAKECMDGOALS
++ifeq ($(filter-out $(NON_CHECK_FEAT_TARGETS),$(MAKECMDGOALS)),)
++  check_feat := 0
++endif
++endif
++
++ifeq ($(check_feat),1)
++ifeq ($(FEATURES_DUMP),)
++include $(srctree)/tools/build/Makefile.feature
++else
++include $(FEATURES_DUMP)
++endif
++endif
++
++ifeq ($(feature-disassembler-four-args), 1)
++CFLAGS += -DDISASM_FOUR_ARGS_SIGNATURE
++endif
++
+ %.yacc.c: %.y
+ 	$(YACC) -o $@ -d $<
+ 
+diff --git a/tools/bpf/bpf_jit_disasm.c b/tools/bpf/bpf_jit_disasm.c
+index 75bf526a0168..30044bc4f389 100644
+--- a/tools/bpf/bpf_jit_disasm.c
++++ b/tools/bpf/bpf_jit_disasm.c
+@@ -72,7 +72,14 @@ static void get_asm_insns(uint8_t *image, size_t len, int opcodes)
+ 
+ 	disassemble_init_for_target(&info);
+ 
++#ifdef DISASM_FOUR_ARGS_SIGNATURE
++	disassemble = disassembler(info.arch,
++				   bfd_big_endian(bfdf),
++				   info.mach,
++				   bfdf);
++#else
+ 	disassemble = disassembler(bfdf);
++#endif
+ 	assert(disassemble);
+ 
+ 	do {
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index f8f31a8d9269..2237bc43f71c 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -46,6 +46,30 @@ LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
+ INSTALL ?= install
+ RM ?= rm -f
+ 
++FEATURE_USER = .bpftool
++FEATURE_TESTS = libbfd disassembler-four-args
++FEATURE_DISPLAY = libbfd disassembler-four-args
++
++check_feat := 1
++NON_CHECK_FEAT_TARGETS := clean uninstall doc doc-clean doc-install doc-uninstall
++ifdef MAKECMDGOALS
++ifeq ($(filter-out $(NON_CHECK_FEAT_TARGETS),$(MAKECMDGOALS)),)
++  check_feat := 0
++endif
++endif
++
++ifeq ($(check_feat),1)
++ifeq ($(FEATURES_DUMP),)
++include $(srctree)/tools/build/Makefile.feature
++else
++include $(FEATURES_DUMP)
++endif
++endif
++
++ifeq ($(feature-disassembler-four-args), 1)
++CFLAGS += -DDISASM_FOUR_ARGS_SIGNATURE
++endif
++
+ include $(wildcard *.d)
+ 
+ all: $(OUTPUT)bpftool
+diff --git a/tools/bpf/bpftool/jit_disasm.c b/tools/bpf/bpftool/jit_disasm.c
+index 1551d3918d4c..57d32e8a1391 100644
+--- a/tools/bpf/bpftool/jit_disasm.c
++++ b/tools/bpf/bpftool/jit_disasm.c
+@@ -107,7 +107,14 @@ void disasm_print_insn(unsigned char *image, ssize_t len, int opcodes)
+ 
+ 	disassemble_init_for_target(&info);
+ 
++#ifdef DISASM_FOUR_ARGS_SIGNATURE
++	disassemble = disassembler(info.arch,
++				   bfd_big_endian(bfdf),
++				   info.mach,
++				   bfdf);
++#else
+ 	disassemble = disassembler(bfdf);
++#endif
+ 	assert(disassemble);
+ 
+ 	if (json_output)
+diff --git a/tools/build/feature/Makefile b/tools/build/feature/Makefile
+index 96982640fbf8..17f2c73fff8b 100644
+--- a/tools/build/feature/Makefile
++++ b/tools/build/feature/Makefile
+@@ -13,6 +13,7 @@ FILES=                                          \
+          test-hello.bin                         \
+          test-libaudit.bin                      \
+          test-libbfd.bin                        \
++         test-disassembler-four-args.bin        \
+          test-liberty.bin                       \
+          test-liberty-z.bin                     \
+          test-cplus-demangle.bin                \
+@@ -188,6 +189,9 @@ $(OUTPUT)test-libpython-version.bin:
+ $(OUTPUT)test-libbfd.bin:
+ 	$(BUILD) -DPACKAGE='"perf"' -lbfd -lz -liberty -ldl
+ 
++$(OUTPUT)test-disassembler-four-args.bin:
++	$(BUILD) -lbfd -lopcodes
++
+ $(OUTPUT)test-liberty.bin:
+ 	$(CC) $(CFLAGS) -Wall -Werror -o $@ test-libbfd.c -DPACKAGE='"perf"' $(LDFLAGS) -lbfd -ldl -liberty
+ 
+diff --git a/tools/build/feature/test-disassembler-four-args.c b/tools/build/feature/test-disassembler-four-args.c
+new file mode 100644
+index 000000000000..45ce65cfddf0
+--- /dev/null
++++ b/tools/build/feature/test-disassembler-four-args.c
+@@ -0,0 +1,15 @@
++// SPDX-License-Identifier: GPL-2.0
++#include <bfd.h>
++#include <dis-asm.h>
++
++int main(void)
++{
++	bfd *abfd = bfd_openr(NULL, NULL);
++
++	disassembler(bfd_get_arch(abfd),
++		     bfd_big_endian(abfd),
++		     bfd_get_mach(abfd),
++		     abfd);
++
++	return 0;
++}
+-- 
+cgit 1.2.3-1.el7
+
+

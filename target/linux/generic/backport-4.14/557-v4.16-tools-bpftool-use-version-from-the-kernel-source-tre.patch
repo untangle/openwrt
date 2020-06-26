@@ -1,0 +1,99 @@
+From 4bfe3bd3cc351efd1d51b3258b060e9445533888 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Wed, 27 Dec 2017 19:16:28 +0000
+Subject: [PATCH 58/95] tools/bpftool: use version from the kernel source tree
+
+Bpftool determines it's own version based on the kernel
+version, which is picked from the linux/version.h header.
+
+It's strange to use the version of the installed kernel
+headers, and makes much more sense to use the version
+of the actual source tree, where bpftool sources are.
+
+Fix this by building kernelversion target and use
+the resulting string as bpftool version.
+
+Example:
+before:
+
+$ bpftool version
+bpftool v4.14.6
+
+after:
+$ bpftool version
+bpftool v4.15.0-rc3
+
+$bpftool version --json
+{"version":"4.15.0-rc3"}
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Makefile |  3 +++
+ tools/bpf/bpftool/main.c   | 13 ++-----------
+ 2 files changed, 5 insertions(+), 11 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index 3f17ad317512..f8f31a8d9269 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -23,6 +23,8 @@ endif
+ 
+ LIBBPF = $(BPF_PATH)libbpf.a
+ 
++BPFTOOL_VERSION=$(shell make --no-print-directory -sC ../../.. kernelversion)
++
+ $(LIBBPF): FORCE
+ 	$(Q)$(MAKE) -C $(BPF_DIR) OUTPUT=$(OUTPUT) $(OUTPUT)libbpf.a FEATURES_DUMP=$(FEATURE_DUMP_EXPORT)
+ 
+@@ -38,6 +40,7 @@ CC = gcc
+ CFLAGS += -O2
+ CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow
+ CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf -I$(srctree)/kernel/bpf/
++CFLAGS += -DBPFTOOL_VERSION='"$(BPFTOOL_VERSION)"'
+ LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
+ 
+ INSTALL ?= install
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index ecd53ccf1239..3a0396d87c42 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -38,7 +38,6 @@
+ #include <errno.h>
+ #include <getopt.h>
+ #include <linux/bpf.h>
+-#include <linux/version.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -95,21 +94,13 @@ static int do_help(int argc, char **argv)
+ 
+ static int do_version(int argc, char **argv)
+ {
+-	unsigned int version[3];
+-
+-	version[0] = LINUX_VERSION_CODE >> 16;
+-	version[1] = LINUX_VERSION_CODE >> 8 & 0xf;
+-	version[2] = LINUX_VERSION_CODE & 0xf;
+-
+ 	if (json_output) {
+ 		jsonw_start_object(json_wtr);
+ 		jsonw_name(json_wtr, "version");
+-		jsonw_printf(json_wtr, "\"%u.%u.%u\"",
+-			     version[0], version[1], version[2]);
++		jsonw_printf(json_wtr, "\"%s\"", BPFTOOL_VERSION);
+ 		jsonw_end_object(json_wtr);
+ 	} else {
+-		printf("%s v%u.%u.%u\n", bin_name,
+-		       version[0], version[1], version[2]);
++		printf("%s v%s\n", bin_name, BPFTOOL_VERSION);
+ 	}
+ 	return 0;
+ }
+-- 
+cgit 1.2.3-1.el7
+
+

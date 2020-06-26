@@ -1,0 +1,98 @@
+From 077c066a6c5445423147496e6c9b9a2c2d2ee762 Mon Sep 17 00:00:00 2001
+From: Jesper Dangaard Brouer <brouer@redhat.com>
+Date: Thu, 8 Feb 2018 12:48:17 +0100
+Subject: [PATCH 84/95] tools/libbpf: improve the pr_debug statements to contain section
+ numbers
+
+While debugging a bpf ELF loading issue, I needed to correlate the
+ELF section number with the failed relocation section reference.
+Thus, add section numbers/index to the pr_debug.
+
+In debug mode, also print section that were skipped.  This helped
+me identify that a section (.eh_frame) was skipped, and this was
+the reason the relocation section (.rel.eh_frame) could not find
+that section number.
+
+The section numbers corresponds to the readelf tools Section Headers [Nr].
+
+Signed-off-by: Jesper Dangaard Brouer <brouer@redhat.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/lib/bpf/libbpf.c | 25 +++++++++++++------------
+ 1 file changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index c64840365433..0c794f7fc050 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -319,8 +319,8 @@ bpf_program__init(void *data, size_t size, char *section_name, int idx,
+ 
+ 	prog->section_name = strdup(section_name);
+ 	if (!prog->section_name) {
+-		pr_warning("failed to alloc name for prog under section %s\n",
+-			   section_name);
++		pr_warning("failed to alloc name for prog under section(%d) %s\n",
++			   idx, section_name);
+ 		goto errout;
+ 	}
+ 
+@@ -763,29 +763,29 @@ static int bpf_object__elf_collect(struct bpf_object *obj)
+ 
+ 		idx++;
+ 		if (gelf_getshdr(scn, &sh) != &sh) {
+-			pr_warning("failed to get section header from %s\n",
+-				   obj->path);
++			pr_warning("failed to get section(%d) header from %s\n",
++				   idx, obj->path);
+ 			err = -LIBBPF_ERRNO__FORMAT;
+ 			goto out;
+ 		}
+ 
+ 		name = elf_strptr(elf, ep->e_shstrndx, sh.sh_name);
+ 		if (!name) {
+-			pr_warning("failed to get section name from %s\n",
+-				   obj->path);
++			pr_warning("failed to get section(%d) name from %s\n",
++				   idx, obj->path);
+ 			err = -LIBBPF_ERRNO__FORMAT;
+ 			goto out;
+ 		}
+ 
+ 		data = elf_getdata(scn, 0);
+ 		if (!data) {
+-			pr_warning("failed to get section data from %s(%s)\n",
+-				   name, obj->path);
++			pr_warning("failed to get section(%d) data from %s(%s)\n",
++				   idx, name, obj->path);
+ 			err = -LIBBPF_ERRNO__FORMAT;
+ 			goto out;
+ 		}
+-		pr_debug("section %s, size %ld, link %d, flags %lx, type=%d\n",
+-			 name, (unsigned long)data->d_size,
++		pr_debug("section(%d) %s, size %ld, link %d, flags %lx, type=%d\n",
++			 idx, name, (unsigned long)data->d_size,
+ 			 (int)sh.sh_link, (unsigned long)sh.sh_flags,
+ 			 (int)sh.sh_type);
+ 
+@@ -840,6 +840,8 @@ static int bpf_object__elf_collect(struct bpf_object *obj)
+ 				obj->efile.reloc[n].shdr = sh;
+ 				obj->efile.reloc[n].data = data;
+ 			}
++		} else {
++			pr_debug("skip section(%d) %s\n", idx, name);
+ 		}
+ 		if (err)
+ 			goto out;
+@@ -1119,8 +1121,7 @@ static int bpf_object__collect_reloc(struct bpf_object *obj)
+ 
+ 		prog = bpf_object__find_prog_by_idx(obj, idx);
+ 		if (!prog) {
+-			pr_warning("relocation failed: no %d section\n",
+-				   idx);
++			pr_warning("relocation failed: no section(%d)\n", idx);
+ 			return -LIBBPF_ERRNO__RELOC;
+ 		}
+ 
+-- 
+cgit 1.2.3-1.el7
+

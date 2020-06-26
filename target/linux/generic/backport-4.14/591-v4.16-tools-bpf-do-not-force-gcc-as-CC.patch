@@ -1,0 +1,32 @@
+From 47f6bc4ce1ff70d7ba0924c2f1c218c96cd585fb Mon Sep 17 00:00:00 2001
+From: Brett Mastbergen <brett.mastbergen@gmail.com>
+Date: Tue, 9 Jun 2020 17:35:06 -0400
+Subject: [PATCH 92/95] tools, bpf: Do not force gcc as CC
+
+This allows transparent cross-compilation with CROSS_COMPILE by
+relying on 7ed1c1901fe5 ("tools: fix cross-compile var clobbering").
+
+Same change was applied to tools/bpf/bpftool/Makefile in
+9e88b9312acb ("tools: bpftool: do not force gcc as CC").
+
+Signed-off-by: Brett Mastbergen <brett.mastbergen@gmail.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+Link: https://lore.kernel.org/bpf/20200609213506.3299-1-brett.mastbergen@gmail.com
+---
+ tools/bpf/Makefile | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/tools/bpf/Makefile b/tools/bpf/Makefile
+index 77472e28c8fd..6df1850f8353 100644
+--- a/tools/bpf/Makefile
++++ b/tools/bpf/Makefile
+@@ -3,7 +3,6 @@ include ../scripts/Makefile.include
+ 
+ prefix ?= /usr/local
+ 
+-CC = gcc
+ LEX = flex
+ YACC = bison
+ MAKE = make
+-- 
+cgit 1.2.3-1.el7

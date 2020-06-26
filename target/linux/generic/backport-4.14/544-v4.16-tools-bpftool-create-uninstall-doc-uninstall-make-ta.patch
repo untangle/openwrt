@@ -1,0 +1,95 @@
+From d32442485df7633fc67245e3e614d29ac3c45dbd Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 7 Dec 2017 15:00:18 -0800
+Subject: [PATCH 45/95] tools: bpftool: create "uninstall", "doc-uninstall" make targets
+
+Create two targets to remove executable and documentation that would
+have been previously installed with `make install` and `make
+doc-install`.
+
+Also create a "QUIET_UNINST" helper in tools/scripts/Makefile.include.
+
+Do not attempt to remove directories /usr/local/sbin and
+/usr/share/bash-completions/completions, even if they are empty, as
+those specific directories probably already existed on the system before
+we installed the program, and we do not wish to break other makefiles
+that might assume their existence. Do remvoe /usr/local/share/man/man8
+if empty however, as this directory does not seem to exist by default.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/Makefile |  8 +++++++-
+ tools/bpf/bpftool/Makefile               | 12 ++++++++++--
+ tools/scripts/Makefile.include           |  1 +
+ 3 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/Makefile b/tools/bpf/bpftool/Documentation/Makefile
+index 71c17fab4f2f..c462a928e03d 100644
+--- a/tools/bpf/bpftool/Documentation/Makefile
++++ b/tools/bpf/bpftool/Documentation/Makefile
+@@ -3,6 +3,7 @@ include ../../../scripts/utilities.mak
+ 
+ INSTALL ?= install
+ RM ?= rm -f
++RMDIR ?= rmdir --ignore-fail-on-non-empty
+ 
+ ifeq ($(V),1)
+   Q =
+@@ -34,5 +35,10 @@ install: man
+ 	$(Q)$(INSTALL) -d -m 755 $(DESTDIR)$(man8dir)
+ 	$(Q)$(INSTALL) -m 644 $(DOC_MAN8) $(DESTDIR)$(man8dir)
+ 
+-.PHONY: man man8 clean install
++uninstall:
++	$(call QUIET_UNINST, Documentation-man)
++	$(Q)$(RM) $(addprefix $(DESTDIR)$(man8dir)/,$(_DOC_MAN8))
++	$(Q)$(RMDIR) $(DESTDIR)$(man8dir)
++
++.PHONY: man man8 clean install uninstall
+ .DEFAULT_GOAL := man
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index 203ae2e14fbc..3f17ad317512 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -70,6 +70,11 @@ install: $(OUTPUT)bpftool
+ 	$(Q)$(INSTALL) -m 0755 -d $(DESTDIR)$(bash_compdir)
+ 	$(Q)$(INSTALL) -m 0644 bash-completion/bpftool $(DESTDIR)$(bash_compdir)
+ 
++uninstall:
++	$(call QUIET_UNINST, bpftool)
++	$(Q)$(RM) $(DESTDIR)$(prefix)/sbin/bpftool
++	$(Q)$(RM) $(DESTDIR)$(bash_compdir)/bpftool
++
+ doc:
+ 	$(call descend,Documentation)
+ 
+@@ -79,8 +84,11 @@ doc-clean:
+ doc-install:
+ 	$(call descend,Documentation,install)
+ 
++doc-uninstall:
++	$(call descend,Documentation,uninstall)
++
+ FORCE:
+ 
+-.PHONY: all FORCE clean install
+-.PHONY: doc doc-clean doc-install
++.PHONY: all FORCE clean install uninstall
++.PHONY: doc doc-clean doc-install doc-uninstall
+ .DEFAULT_GOAL := all
+diff --git a/tools/scripts/Makefile.include b/tools/scripts/Makefile.include
+index 3fab179b1aba..fcb3ed0be5f8 100644
+--- a/tools/scripts/Makefile.include
++++ b/tools/scripts/Makefile.include
+@@ -99,5 +99,6 @@ ifneq ($(silent),1)
+ 
+ 	QUIET_CLEAN    = @printf '  CLEAN    %s\n' $1;
+ 	QUIET_INSTALL  = @printf '  INSTALL  %s\n' $1;
++	QUIET_UNINST   = @printf '  UNINST   %s\n' $1;
+   endif
+ endif
+-- 
+cgit 1.2.3-1.el7
+
+

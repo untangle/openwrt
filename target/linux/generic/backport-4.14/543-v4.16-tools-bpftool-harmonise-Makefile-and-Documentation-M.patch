@@ -1,0 +1,188 @@
+From 658e85aa4ff2951f1e5163767827eaffccd51067 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 7 Dec 2017 15:00:17 -0800
+Subject: [PATCH 44/95] tools: bpftool: harmonise Makefile and Documentation/Makefile
+
+Several minor fixes and harmonisation items for Makefiles:
+
+* Use the same mechanism for verbose/non-verbose output in two files
+  ("$(Q)"), for all commands.
+* Use calls to "QUIET_INSTALL" and equivalent in Makefile. In
+  particular, use "call(descend, ...)" instead of "make -C" to run
+  documentation targets.
+* Add a "doc-clean" target, aligned on "doc" and "doc-install".
+* Make "install" target in Makefile depend on "bpftool".
+* Remove condition on DESTDIR to initialise prefix in doc Makefile.
+* Remove modification of VPATH based on OUTPUT, it is unused.
+* Formatting: harmonise spaces around equal signs.
+* Make install path for man pages /usr/local/man instead of
+  /usr/local/share/man (respects the Makefile conventions, and the
+  latter is usually a symbolic link to the former anyway).
+* Do not erase prefix if set by user in bpftool Makefile.
+* Fix install target for bpftool: append DESTDIR to install path.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/Makefile | 22 +++++++------
+ tools/bpf/bpftool/Makefile               | 53 ++++++++++++++------------------
+ 2 files changed, 36 insertions(+), 39 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/Makefile b/tools/bpf/bpftool/Documentation/Makefile
+index 37292bb5ce60..71c17fab4f2f 100644
+--- a/tools/bpf/bpftool/Documentation/Makefile
++++ b/tools/bpf/bpftool/Documentation/Makefile
+@@ -4,11 +4,14 @@ include ../../../scripts/utilities.mak
+ INSTALL ?= install
+ RM ?= rm -f
+ 
+-# Make the path relative to DESTDIR, not prefix
+-ifndef DESTDIR
+-prefix ?= /usr/local
++ifeq ($(V),1)
++  Q =
++else
++  Q = @
+ endif
+-mandir ?= $(prefix)/share/man
++
++prefix ?= /usr/local
++mandir ?= $(prefix)/man
+ man8dir = $(mandir)/man8
+ 
+ MAN8_RST = $(wildcard *.rst)
+@@ -20,15 +23,16 @@ man: man8
+ man8: $(DOC_MAN8)
+ 
+ $(OUTPUT)%.8: %.rst
+-	rst2man $< > $@
++	$(QUIET_GEN)rst2man $< > $@
+ 
+ clean:
+-	$(call QUIET_CLEAN, Documentation) $(RM) $(DOC_MAN8)
++	$(call QUIET_CLEAN, Documentation)
++	$(Q)$(RM) $(DOC_MAN8)
+ 
+ install: man
+-	$(call QUIET_INSTALL, Documentation-man) \
+-		$(INSTALL) -d -m 755 $(DESTDIR)$(man8dir); \
+-		$(INSTALL) -m 644 $(DOC_MAN8) $(DESTDIR)$(man8dir);
++	$(call QUIET_INSTALL, Documentation-man)
++	$(Q)$(INSTALL) -d -m 755 $(DESTDIR)$(man8dir)
++	$(Q)$(INSTALL) -m 644 $(DOC_MAN8) $(DESTDIR)$(man8dir)
+ 
+ .PHONY: man man8 clean install
+ .DEFAULT_GOAL := man
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index ec3052c0b004..203ae2e14fbc 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -1,25 +1,10 @@
+ include ../../scripts/Makefile.include
+-
+ include ../../scripts/utilities.mak
+ 
+ ifeq ($(srctree),)
+ srctree := $(patsubst %/,%,$(dir $(CURDIR)))
+ srctree := $(patsubst %/,%,$(dir $(srctree)))
+ srctree := $(patsubst %/,%,$(dir $(srctree)))
+-#$(info Determined 'srctree' to be $(srctree))
+-endif
+-
+-ifneq ($(objtree),)
+-#$(info Determined 'objtree' to be $(objtree))
+-endif
+-
+-ifneq ($(OUTPUT),)
+-#$(info Determined 'OUTPUT' to be $(OUTPUT))
+-# Adding $(OUTPUT) as a directory to look for source files,
+-# because use generated output files as sources dependency
+-# for flex/bison parsers.
+-VPATH += $(OUTPUT)
+-export VPATH
+ endif
+ 
+ ifeq ($(V),1)
+@@ -28,12 +13,12 @@ else
+   Q = @
+ endif
+ 
+-BPF_DIR	= $(srctree)/tools/lib/bpf/
++BPF_DIR = $(srctree)/tools/lib/bpf/
+ 
+ ifneq ($(OUTPUT),)
+-  BPF_PATH=$(OUTPUT)
++  BPF_PATH = $(OUTPUT)
+ else
+-  BPF_PATH=$(BPF_DIR)
++  BPF_PATH = $(BPF_DIR)
+ endif
+ 
+ LIBBPF = $(BPF_PATH)libbpf.a
+@@ -45,7 +30,7 @@ $(LIBBPF)-clean:
+ 	$(call QUIET_CLEAN, libbpf)
+ 	$(Q)$(MAKE) -C $(BPF_DIR) OUTPUT=$(OUTPUT) clean >/dev/null
+ 
+-prefix = /usr/local
++prefix ?= /usr/local
+ bash_compdir ?= /usr/share/bash-completion/completions
+ 
+ CC = gcc
+@@ -55,12 +40,15 @@ CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow
+ CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf -I$(srctree)/kernel/bpf/
+ LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
+ 
++INSTALL ?= install
++RM ?= rm -f
++
+ include $(wildcard *.d)
+ 
+ all: $(OUTPUT)bpftool
+ 
+-SRCS=$(wildcard *.c)
+-OBJS=$(patsubst %.c,$(OUTPUT)%.o,$(SRCS)) $(OUTPUT)disasm.o
++SRCS = $(wildcard *.c)
++OBJS = $(patsubst %.c,$(OUTPUT)%.o,$(SRCS)) $(OUTPUT)disasm.o
+ 
+ $(OUTPUT)disasm.o: $(srctree)/kernel/bpf/disasm.c
+ 	$(QUIET_CC)$(COMPILE.c) -MMD -o $@ $<
+@@ -73,21 +61,26 @@ $(OUTPUT)%.o: %.c
+ 
+ clean: $(LIBBPF)-clean
+ 	$(call QUIET_CLEAN, bpftool)
+-	$(Q)rm -rf $(OUTPUT)bpftool $(OUTPUT)*.o $(OUTPUT)*.d
++	$(Q)$(RM) $(OUTPUT)bpftool $(OUTPUT)*.o $(OUTPUT)*.d
+ 
+-install:
+-	install -m 0755 -d $(prefix)/sbin
+-	install $(OUTPUT)bpftool $(prefix)/sbin/bpftool
+-	install -m 0755 -d $(bash_compdir)
+-	install -m 0644 bash-completion/bpftool $(bash_compdir)
++install: $(OUTPUT)bpftool
++	$(call QUIET_INSTALL, bpftool)
++	$(Q)$(INSTALL) -m 0755 -d $(DESTDIR)$(prefix)/sbin
++	$(Q)$(INSTALL) $(OUTPUT)bpftool $(DESTDIR)$(prefix)/sbin/bpftool
++	$(Q)$(INSTALL) -m 0755 -d $(DESTDIR)$(bash_compdir)
++	$(Q)$(INSTALL) -m 0644 bash-completion/bpftool $(DESTDIR)$(bash_compdir)
+ 
+ doc:
+-	$(Q)$(MAKE) -C Documentation/
++	$(call descend,Documentation)
++
++doc-clean:
++	$(call descend,Documentation,clean)
+ 
+ doc-install:
+-	$(Q)$(MAKE) -C Documentation/ install
++	$(call descend,Documentation,install)
+ 
+ FORCE:
+ 
+-.PHONY: all clean FORCE install doc doc-install
++.PHONY: all FORCE clean install
++.PHONY: doc doc-clean doc-install
+ .DEFAULT_GOAL := all
+-- 
+cgit 1.2.3-1.el7
+
+

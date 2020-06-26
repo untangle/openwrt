@@ -1,0 +1,36 @@
+From a55aaf6db0587e1a6e79dce8ada0e237d6068afb Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Fri, 19 Jan 2018 14:17:45 +0000
+Subject: [PATCH 74/95] bpftool: recognize BPF_MAP_TYPE_CPUMAP maps
+
+Add BPF_MAP_TYPE_CPUMAP map type to the list
+of map type recognized by bpftool and define
+corresponding text representation.
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Quentin Monnet <quentin.monnet@netronome.com>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/map.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index a152c1a5c94c..f95fa67bb498 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -66,6 +66,7 @@ static const char * const map_type_name[] = {
+ 	[BPF_MAP_TYPE_HASH_OF_MAPS]	= "hash_of_maps",
+ 	[BPF_MAP_TYPE_DEVMAP]		= "devmap",
+ 	[BPF_MAP_TYPE_SOCKMAP]		= "sockmap",
++	[BPF_MAP_TYPE_CPUMAP]		= "cpumap",
+ };
+ 
+ static unsigned int get_possible_cpus(void)
+-- 
+cgit 1.2.3-1.el7
+
+

@@ -1,0 +1,63 @@
+From 9e2308c133a92ff98d1397149c8483858bcf8fc0 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 19 Oct 2017 15:46:24 -0700
+Subject: [PATCH 13/95] tools: bpftool: print all relevant byte opcodes for "load double
+ word"
+
+The eBPF instruction permitting to load double words (8 bytes) into a
+register need 8-byte long "immediate" field, and thus occupy twice the
+space of other instructions. bpftool was aware of this and would
+increment the instruction counter only once on meeting such instruction,
+but it would only print the first four bytes of the immediate value to
+load. Make it able to dump the whole 16 byte-long double instruction
+instead (as would `llvm-objdump -d <program>`).
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/prog.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 355c14325622..57edbea2fbe8 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -313,20 +313,29 @@ static void print_insn(struct bpf_verifier_env *env, const char *fmt, ...)
+ static void dump_xlated(void *buf, unsigned int len, bool opcodes)
+ {
+ 	struct bpf_insn *insn = buf;
++	bool double_insn = false;
+ 	unsigned int i;
+ 
+ 	for (i = 0; i < len / sizeof(*insn); i++) {
++		if (double_insn) {
++			double_insn = false;
++			continue;
++		}
++
++		double_insn = insn[i].code == (BPF_LD | BPF_IMM | BPF_DW);
++
+ 		printf("% 4d: ", i);
+ 		print_bpf_insn(print_insn, NULL, insn + i, true);
+ 
+ 		if (opcodes) {
+ 			printf("       ");
+ 			fprint_hex(stdout, insn + i, 8, " ");
++			if (double_insn && i < len - 1) {
++				printf(" ");
++				fprint_hex(stdout, insn + i + 1, 8, " ");
++			}
+ 			printf("\n");
+ 		}
+-
+-		if (insn[i].code == (BPF_LD | BPF_IMM | BPF_DW))
+-			i++;
+ 	}
+ }
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

@@ -1,0 +1,65 @@
+From 1852719658c0f853b5481c9eaed862f1a9355edc Mon Sep 17 00:00:00 2001
+From: Prashant Bhole <bhole_prashant_q7@lab.ntt.co.jp>
+Date: Wed, 8 Nov 2017 13:55:47 +0900
+Subject: [PATCH 34/95] tools: bpftool: open pinned object without type check
+
+This was needed for opening any file in bpf-fs without knowing
+its object type
+
+Signed-off-by: Prashant Bhole <bhole_prashant_q7@lab.ntt.co.jp>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/common.c | 15 +++++++++++++--
+ tools/bpf/bpftool/main.h   |  1 +
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+index aa7017098b2a..6b3d25d6a782 100644
+--- a/tools/bpf/bpftool/common.c
++++ b/tools/bpf/bpftool/common.c
+@@ -122,9 +122,8 @@ static int mnt_bpffs(const char *target, char *buff, size_t bufflen)
+ 	return 0;
+ }
+ 
+-int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
++int open_obj_pinned(char *path)
+ {
+-	enum bpf_obj_type type;
+ 	int fd;
+ 
+ 	fd = bpf_obj_get(path);
+@@ -136,6 +135,18 @@ int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
+ 		return -1;
+ 	}
+ 
++	return fd;
++}
++
++int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
++{
++	enum bpf_obj_type type;
++	int fd;
++
++	fd = open_obj_pinned(path);
++	if (fd < 0)
++		return -1;
++
+ 	type = get_fd_type(fd);
+ 	if (type < 0) {
+ 		close(fd);
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index ff5ad05b137b..2ff2a361af0d 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -89,6 +89,7 @@ int cmd_select(const struct cmd *cmds, int argc, char **argv,
+ int get_fd_type(int fd);
+ const char *get_fd_type_name(enum bpf_obj_type type);
+ char *get_fdinfo(int fd, const char *key);
++int open_obj_pinned(char *path);
+ int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type);
+ int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32));
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

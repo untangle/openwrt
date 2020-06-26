@@ -1,0 +1,266 @@
+From 49a086c201a9356287471aa5846a427bdcecc4f7 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Wed, 13 Dec 2017 15:18:53 +0000
+Subject: [PATCH 48/95] bpftool: implement prog load command
+
+Add the prog load command to load a bpf program from a specified
+binary file and pin it to bpffs.
+
+Usage description and examples are given in the corresponding man
+page.
+
+Syntax:
+$ bpftool prog load OBJ FILE
+
+FILE is a non-existing file on bpffs.
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Martin KaFai Lau <kafai@fb.com>
+Cc: Quentin Monnet <quentin.monnet@netronome.com>
+Cc: David Ahern <dsahern@gmail.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-prog.rst | 10 +++-
+ tools/bpf/bpftool/Documentation/bpftool.rst      |  2 +-
+ tools/bpf/bpftool/common.c                       | 71 +++++++++++++-----------
+ tools/bpf/bpftool/main.h                         |  1 +
+ tools/bpf/bpftool/prog.c                         | 29 +++++++++-
+ 5 files changed, 79 insertions(+), 34 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-prog.rst b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+index 36e8d1c3c40d..ffdb20e8280f 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-prog.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+@@ -15,7 +15,7 @@ SYNOPSIS
+ 	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
+ 
+ 	*COMMANDS* :=
+-	{ **show** | **dump xlated** | **dump jited** | **pin** | **help** }
++	{ **show** | **dump xlated** | **dump jited** | **pin** | **load** | **help** }
+ 
+ MAP COMMANDS
+ =============
+@@ -24,6 +24,7 @@ MAP COMMANDS
+ |	**bpftool** **prog dump xlated** *PROG* [{**file** *FILE* | **opcodes**}]
+ |	**bpftool** **prog dump jited**  *PROG* [{**file** *FILE* | **opcodes**}]
+ |	**bpftool** **prog pin** *PROG* *FILE*
++|	**bpftool** **prog load** *OBJ* *FILE*
+ |	**bpftool** **prog help**
+ |
+ |	*PROG* := { **id** *PROG_ID* | **pinned** *FILE* | **tag** *PROG_TAG* }
+@@ -57,6 +58,11 @@ DESCRIPTION
+ 
+ 		  Note: *FILE* must be located in *bpffs* mount.
+ 
++	**bpftool prog load** *OBJ* *FILE*
++		  Load bpf program from binary *OBJ* and pin as *FILE*.
++
++		  Note: *FILE* must be located in *bpffs* mount.
++
+ 	**bpftool prog help**
+ 		  Print short help message.
+ 
+@@ -126,8 +132,10 @@ EXAMPLES
+ |
+ | **# mount -t bpf none /sys/fs/bpf/**
+ | **# bpftool prog pin id 10 /sys/fs/bpf/prog**
++| **# bpftool prog load ./my_prog.o /sys/fs/bpf/prog2**
+ | **# ls -l /sys/fs/bpf/**
+ |   -rw------- 1 root root 0 Jul 22 01:43 prog
++|   -rw------- 1 root root 0 Jul 22 01:44 prog2
+ 
+ **# bpftool prog dum jited pinned /sys/fs/bpf/prog opcodes**
+ 
+diff --git a/tools/bpf/bpftool/Documentation/bpftool.rst b/tools/bpf/bpftool/Documentation/bpftool.rst
+index 926c03d5a8da..f547a0c0aa34 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool.rst
+@@ -26,7 +26,7 @@ SYNOPSIS
+ 	| **pin** | **help** }
+ 
+ 	*PROG-COMMANDS* := { **show** | **dump jited** | **dump xlated** | **pin**
+-	| **help** }
++	| **load** | **help** }
+ 
+ DESCRIPTION
+ ===========
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+index 2bd3b280e6dd..b62c94e3997a 100644
+--- a/tools/bpf/bpftool/common.c
++++ b/tools/bpf/bpftool/common.c
+@@ -163,13 +163,49 @@ int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type)
+ 	return fd;
+ }
+ 
+-int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32))
++int do_pin_fd(int fd, const char *name)
+ {
+ 	char err_str[ERR_MAX_LEN];
+-	unsigned int id;
+-	char *endptr;
+ 	char *file;
+ 	char *dir;
++	int err = 0;
++
++	err = bpf_obj_pin(fd, name);
++	if (!err)
++		goto out;
++
++	file = malloc(strlen(name) + 1);
++	strcpy(file, name);
++	dir = dirname(file);
++
++	if (errno != EPERM || is_bpffs(dir)) {
++		p_err("can't pin the object (%s): %s", name, strerror(errno));
++		goto out_free;
++	}
++
++	/* Attempt to mount bpffs, then retry pinning. */
++	err = mnt_bpffs(dir, err_str, ERR_MAX_LEN);
++	if (!err) {
++		err = bpf_obj_pin(fd, name);
++		if (err)
++			p_err("can't pin the object (%s): %s", name,
++			      strerror(errno));
++	} else {
++		err_str[ERR_MAX_LEN - 1] = '\0';
++		p_err("can't mount BPF file system to pin the object (%s): %s",
++		      name, err_str);
++	}
++
++out_free:
++	free(file);
++out:
++	return err;
++}
++
++int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32))
++{
++	unsigned int id;
++	char *endptr;
+ 	int err;
+ 	int fd;
+ 
+@@ -195,35 +231,8 @@ int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32))
+ 		return -1;
+ 	}
+ 
+-	err = bpf_obj_pin(fd, *argv);
+-	if (!err)
+-		goto out_close;
+-
+-	file = malloc(strlen(*argv) + 1);
+-	strcpy(file, *argv);
+-	dir = dirname(file);
+-
+-	if (errno != EPERM || is_bpffs(dir)) {
+-		p_err("can't pin the object (%s): %s", *argv, strerror(errno));
+-		goto out_free;
+-	}
++	err = do_pin_fd(fd, *argv);
+ 
+-	/* Attempt to mount bpffs, then retry pinning. */
+-	err = mnt_bpffs(dir, err_str, ERR_MAX_LEN);
+-	if (!err) {
+-		err = bpf_obj_pin(fd, *argv);
+-		if (err)
+-			p_err("can't pin the object (%s): %s", *argv,
+-			      strerror(errno));
+-	} else {
+-		err_str[ERR_MAX_LEN - 1] = '\0';
+-		p_err("can't mount BPF file system to pin the object (%s): %s",
+-		      *argv, err_str);
+-	}
+-
+-out_free:
+-	free(file);
+-out_close:
+ 	close(fd);
+ 	return err;
+ }
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index bff330b49791..bec1ccbb49c7 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -111,6 +111,7 @@ char *get_fdinfo(int fd, const char *key);
+ int open_obj_pinned(char *path);
+ int open_obj_pinned_any(char *path, enum bpf_obj_type exp_type);
+ int do_pin_any(int argc, char **argv, int (*get_fd_by_id)(__u32));
++int do_pin_fd(int fd, const char *name);
+ 
+ int do_prog(int argc, char **arg);
+ int do_map(int argc, char **arg);
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index ad619b96c276..037484ceaeaf 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -45,6 +45,7 @@
+ #include <sys/stat.h>
+ 
+ #include <bpf.h>
++#include <libbpf.h>
+ 
+ #include "main.h"
+ #include "disasm.h"
+@@ -635,6 +636,30 @@ static int do_pin(int argc, char **argv)
+ 	return err;
+ }
+ 
++static int do_load(int argc, char **argv)
++{
++	struct bpf_object *obj;
++	int prog_fd;
++
++	if (argc != 2)
++		usage();
++
++	if (bpf_prog_load(argv[0], BPF_PROG_TYPE_UNSPEC, &obj, &prog_fd)) {
++		p_err("failed to load program\n");
++		return -1;
++	}
++
++	if (do_pin_fd(prog_fd, argv[1])) {
++		p_err("failed to pin program\n");
++		return -1;
++	}
++
++	if (json_output)
++		jsonw_null(json_wtr);
++
++	return 0;
++}
++
+ static int do_help(int argc, char **argv)
+ {
+ 	if (json_output) {
+@@ -647,13 +672,14 @@ static int do_help(int argc, char **argv)
+ 		"       %s %s dump xlated PROG [{ file FILE | opcodes }]\n"
+ 		"       %s %s dump jited  PROG [{ file FILE | opcodes }]\n"
+ 		"       %s %s pin   PROG FILE\n"
++		"       %s %s load  OBJ  FILE\n"
+ 		"       %s %s help\n"
+ 		"\n"
+ 		"       " HELP_SPEC_PROGRAM "\n"
+ 		"       " HELP_SPEC_OPTIONS "\n"
+ 		"",
+ 		bin_name, argv[-2], bin_name, argv[-2], bin_name, argv[-2],
+-		bin_name, argv[-2], bin_name, argv[-2]);
++		bin_name, argv[-2], bin_name, argv[-2], bin_name, argv[-2]);
+ 
+ 	return 0;
+ }
+@@ -663,6 +689,7 @@ static const struct cmd cmds[] = {
+ 	{ "help",	do_help },
+ 	{ "dump",	do_dump },
+ 	{ "pin",	do_pin },
++	{ "load",	do_load },
+ 	{ 0 }
+ };
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

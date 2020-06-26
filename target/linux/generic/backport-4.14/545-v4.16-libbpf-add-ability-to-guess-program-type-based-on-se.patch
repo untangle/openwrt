@@ -1,0 +1,95 @@
+From 583c90097f7271ab90f149b52b9ac2098bf2cbb5 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Wed, 13 Dec 2017 15:18:51 +0000
+Subject: [PATCH 46/95] libbpf: add ability to guess program type based on section name
+
+The bpf_prog_load() function will guess program type if it's not
+specified explicitly. This functionality will be used to implement
+loading of different programs without asking a user to specify
+the program type. In first order it will be used by bpftool.
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Martin KaFai Lau <kafai@fb.com>
+Cc: Quentin Monnet <quentin.monnet@netronome.com>
+Cc: David Ahern <dsahern@gmail.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/lib/bpf/libbpf.c | 51 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 51 insertions(+)
+
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 5aa45f89da93..205b7822fa0a 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -1721,6 +1721,45 @@ BPF_PROG_TYPE_FNS(tracepoint, BPF_PROG_TYPE_TRACEPOINT);
+ BPF_PROG_TYPE_FNS(xdp, BPF_PROG_TYPE_XDP);
+ BPF_PROG_TYPE_FNS(perf_event, BPF_PROG_TYPE_PERF_EVENT);
+ 
++#define BPF_PROG_SEC(string, type) { string, sizeof(string), type }
++static const struct {
++	const char *sec;
++	size_t len;
++	enum bpf_prog_type prog_type;
++} section_names[] = {
++	BPF_PROG_SEC("socket",		BPF_PROG_TYPE_SOCKET_FILTER),
++	BPF_PROG_SEC("kprobe/",		BPF_PROG_TYPE_KPROBE),
++	BPF_PROG_SEC("kretprobe/",	BPF_PROG_TYPE_KPROBE),
++	BPF_PROG_SEC("tracepoint/",	BPF_PROG_TYPE_TRACEPOINT),
++	BPF_PROG_SEC("xdp",		BPF_PROG_TYPE_XDP),
++	BPF_PROG_SEC("perf_event",	BPF_PROG_TYPE_PERF_EVENT),
++	BPF_PROG_SEC("cgroup/skb",	BPF_PROG_TYPE_CGROUP_SKB),
++	BPF_PROG_SEC("cgroup/sock",	BPF_PROG_TYPE_CGROUP_SOCK),
++	BPF_PROG_SEC("cgroup/dev",	BPF_PROG_TYPE_CGROUP_DEVICE),
++	BPF_PROG_SEC("sockops",		BPF_PROG_TYPE_SOCK_OPS),
++	BPF_PROG_SEC("sk_skb",		BPF_PROG_TYPE_SK_SKB),
++};
++#undef BPF_PROG_SEC
++
++static enum bpf_prog_type bpf_program__guess_type(struct bpf_program *prog)
++{
++	int i;
++
++	if (!prog->section_name)
++		goto err;
++
++	for (i = 0; i < ARRAY_SIZE(section_names); i++)
++		if (strncmp(prog->section_name, section_names[i].sec,
++			    section_names[i].len) == 0)
++			return section_names[i].prog_type;
++
++err:
++	pr_warning("failed to guess program type based on section name %s\n",
++		   prog->section_name);
++
++	return BPF_PROG_TYPE_UNSPEC;
++}
++
+ int bpf_map__fd(struct bpf_map *map)
+ {
+ 	return map ? map->fd : -EINVAL;
+@@ -1832,6 +1871,18 @@ int bpf_prog_load(const char *file, enum bpf_prog_type type,
+ 		return -ENOENT;
+ 	}
+ 
++	/*
++	 * If type is not specified, try to guess it based on
++	 * section name.
++	 */
++	if (type == BPF_PROG_TYPE_UNSPEC) {
++		type = bpf_program__guess_type(prog);
++		if (type == BPF_PROG_TYPE_UNSPEC) {
++			bpf_object__close(obj);
++			return -EINVAL;
++		}
++	}
++
+ 	bpf_program__set_type(prog, type);
+ 	err = bpf_object__load(obj);
+ 	if (err) {
+-- 
+cgit 1.2.3-1.el7
+
+

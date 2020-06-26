@@ -1,0 +1,55 @@
+From 244d20efdb68c5c1a26c667baeb232ea163e2f69 Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@fb.com>
+Date: Mon, 2 Oct 2017 22:50:24 -0700
+Subject: [PATCH 94/95] libbpf: introduce bpf_prog_detach2()
+
+introduce bpf_prog_detach2() that takes one more argument prog_fd
+vs bpf_prog_detach() that takes only attach_fd and type.
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/lib/bpf/bpf.c | 12 ++++++++++++
+ tools/lib/bpf/bpf.h |  1 +
+ 2 files changed, 13 insertions(+)
+
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index daf624e4c720..d4b6ba8292ee 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -291,6 +291,18 @@ int bpf_prog_detach(int target_fd, enum bpf_attach_type type)
+ 	return sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr));
+ }
+ 
++int bpf_prog_detach2(int prog_fd, int target_fd, enum bpf_attach_type type)
++{
++	union bpf_attr attr;
++
++	bzero(&attr, sizeof(attr));
++	attr.target_fd	 = target_fd;
++	attr.attach_bpf_fd = prog_fd;
++	attr.attach_type = type;
++
++	return sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr));
++}
++
+ int bpf_prog_test_run(int prog_fd, int repeat, void *data, __u32 size,
+ 		      void *data_out, __u32 *size_out, __u32 *retval,
+ 		      __u32 *duration)
+diff --git a/tools/lib/bpf/bpf.h b/tools/lib/bpf/bpf.h
+index 118d00535a0d..afd64727c9cf 100644
+--- a/tools/lib/bpf/bpf.h
++++ b/tools/lib/bpf/bpf.h
+@@ -66,6 +66,7 @@ int bpf_obj_get(const char *pathname);
+ int bpf_prog_attach(int prog_fd, int attachable_fd, enum bpf_attach_type type,
+ 		    unsigned int flags);
+ int bpf_prog_detach(int attachable_fd, enum bpf_attach_type type);
++int bpf_prog_detach2(int prog_fd, int attachable_fd, enum bpf_attach_type type);
+ int bpf_prog_test_run(int prog_fd, int repeat, void *data, __u32 size,
+ 		      void *data_out, __u32 *size_out, __u32 *retval,
+ 		      __u32 *duration);
+-- 
+cgit 1.2.3-1.el7
+
+

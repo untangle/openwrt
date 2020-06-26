@@ -1,0 +1,39 @@
+From 52c84d36b7e2f8197a9a6174d6f901a7c7afb850 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Wed, 14 Feb 2018 22:42:54 -0800
+Subject: [PATCH 86/95] tools: bpftool: preserve JSON for batch mode when dumping insns to
+ file
+
+Print a "null" JSON object to standard output when bpftool is used to
+print program instructions to a file, so as to avoid breaking JSON
+output on batch mode.
+
+This null object was added for most commands in a previous commit, but
+this specific case had been omitted.
+
+Fixes: 004b45c0e51a ("tools: bpftool: provide JSON output for all possible commands")
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/prog.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index e8e2baaf93c2..e549e329be82 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -774,6 +774,9 @@ static int do_dump(int argc, char **argv)
+ 			      n < 0 ? strerror(errno) : "short write");
+ 			goto err_free;
+ 		}
++
++		if (json_output)
++			jsonw_null(json_wtr);
+ 	} else {
+ 		if (member_len == &info.jited_prog_len) {
+ 			const char *name = NULL;
+-- 
+cgit 1.2.3-1.el7
+
+
