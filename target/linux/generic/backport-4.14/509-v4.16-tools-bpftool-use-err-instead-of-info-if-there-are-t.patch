@@ -1,0 +1,36 @@
+From 1d84487e2a2b98892c3dec7934604e9b76577aa6 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 19 Oct 2017 15:46:21 -0700
+Subject: [PATCH 10/95] tools: bpftool: use err() instead of info() if there are too many
+ insns
+
+Make error messages and return codes more consistent. Specifically,
+replace the use of info() macro with err() when too many eBPF
+instructions are received to be dumped, given that bpftool returns with
+a non-null exit value in that case.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/prog.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index ede7957adcd9..6c03d2ea3f79 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -416,7 +416,7 @@ static int do_dump(int argc, char **argv)
+ 	}
+ 
+ 	if (*member_len > buf_size) {
+-		info("too many instructions returned\n");
++		err("too many instructions returned\n");
+ 		goto err_free;
+ 	}
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

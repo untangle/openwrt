@@ -1,0 +1,38 @@
+From 1739c26da72c4170c86c368c75133adbb740efef Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 19 Oct 2017 15:46:20 -0700
+Subject: [PATCH 09/95] tools: bpftool: fix return value when all eBPF programs have been
+ shown
+
+Change the program to have a more consistent return code. Specifically,
+do not make bpftool return an error code simply because it reaches the
+end of the list of the eBPF programs to show.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/prog.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index aa6d72ea3807..ede7957adcd9 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -275,8 +275,10 @@ static int do_show(int argc, char **argv)
+ 	while (true) {
+ 		err = bpf_prog_get_next_id(id, &id);
+ 		if (err) {
+-			if (errno == ENOENT)
++			if (errno == ENOENT) {
++				err = 0;
+ 				break;
++			}
+ 			err("can't get next program: %s\n", strerror(errno));
+ 			if (errno == EINVAL)
+ 				err("kernel too old?\n");
+-- 
+cgit 1.2.3-1.el7
+
+

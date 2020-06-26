@@ -1,0 +1,58 @@
+From 6061a3d6720600c976b877c3ac1402b3ef0a8a55 Mon Sep 17 00:00:00 2001
+From: Eric Leblond <eric@regit.org>
+Date: Tue, 30 Jan 2018 21:55:03 +0100
+Subject: [PATCH 78/95] libbpf: add missing SPDX-License-Identifier
+
+Signed-off-by: Eric Leblond <eric@regit.org>
+Acked-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ tools/lib/bpf/bpf.c    | 2 ++
+ tools/lib/bpf/bpf.h    | 2 ++
+ tools/lib/bpf/libbpf.c | 2 ++
+ tools/lib/bpf/libbpf.h | 2 ++
+ 4 files changed, 8 insertions(+)
+
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index 9c88f6e4156d..592a58a2b681 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -1,3 +1,5 @@
++// SPDX-License-Identifier: LGPL-2.1
++
+ /*
+  * common eBPF ELF operations.
+  *
+diff --git a/tools/lib/bpf/bpf.h b/tools/lib/bpf/bpf.h
+index 9f44c196931e..8d18fb73d7fb 100644
+--- a/tools/lib/bpf/bpf.h
++++ b/tools/lib/bpf/bpf.h
+@@ -1,3 +1,5 @@
++/* SPDX-License-Identifier: LGPL-2.1 */
++
+ /*
+  * common eBPF ELF operations.
+  *
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index c60122d3ea85..71ddc481f349 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -1,3 +1,5 @@
++// SPDX-License-Identifier: LGPL-2.1
++
+ /*
+  * Common eBPF ELF object loading operations.
+  *
+diff --git a/tools/lib/bpf/libbpf.h b/tools/lib/bpf/libbpf.h
+index e42f96900318..f85906533cdd 100644
+--- a/tools/lib/bpf/libbpf.h
++++ b/tools/lib/bpf/libbpf.h
+@@ -1,3 +1,5 @@
++/* SPDX-License-Identifier: LGPL-2.1 */
++
+ /*
+  * Common eBPF ELF object loading operations.
+  *
+-- 
+cgit 1.2.3-1.el7
+
