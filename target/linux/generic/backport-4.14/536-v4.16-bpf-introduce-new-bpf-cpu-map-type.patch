@@ -1,7 +1,7 @@
 From 6710e1126934d8b4372b4d2f9ae1646cd3f151bf Mon Sep 17 00:00:00 2001
 From: Jesper Dangaard Brouer <brouer@redhat.com>
 Date: Mon, 16 Oct 2017 12:19:28 +0200
-Subject: bpf: introduce new bpf cpu map type BPF_MAP_TYPE_CPUMAP
+Subject: [PATCH 37/95] bpf: introduce new bpf cpu map type BPF_MAP_TYPE_CPUMAP
 
 The 'cpumap' is primarily used as a backend map for XDP BPF helper
 call bpf_redirect_map() and XDP_REDIRECT action, like 'devmap'.
@@ -53,7 +53,6 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
  include/uapi/linux/bpf.h       |   1 +
  kernel/bpf/Makefile            |   1 +
  kernel/bpf/cpumap.c            | 560 +++++++++++++++++++++++++++++++++++++++++
- kernel/bpf/syscall.c           |   8 +-
  kernel/bpf/verifier.c          |   5 +
  tools/include/uapi/linux/bpf.h |   1 +
  7 files changed, 576 insertions(+), 1 deletion(-)
@@ -659,32 +658,6 @@ index 000000000000..e1e25ddba038
 +		wake_up_process(rcpu->kthread);
 +	}
 +}
-diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
-index d124e702e040..54fba06942f5 100644
---- a/kernel/bpf/syscall.c
-+++ b/kernel/bpf/syscall.c
-@@ -592,6 +592,12 @@ static int map_update_elem(union bpf_attr *attr)
- 	if (copy_from_user(value, uvalue, value_size) != 0)
- 		goto free_value;
- 
-+	/* Need to create a kthread, thus must support schedule */
-+	if (map->map_type == BPF_MAP_TYPE_CPUMAP) {
-+		err = map->ops->map_update_elem(map, key, value, attr->flags);
-+		goto out;
-+	}
-+
- 	/* must increment bpf_prog_active to avoid kprobe+bpf triggering from
- 	 * inside bpf map update or delete otherwise deadlocks are possible
- 	 */
-@@ -622,7 +628,7 @@ static int map_update_elem(union bpf_attr *attr)
- 	}
- 	__this_cpu_dec(bpf_prog_active);
- 	preempt_enable();
--
-+out:
- 	if (!err)
- 		trace_bpf_map_update_elem(map, ufd, key, value);
- free_value:
 diff --git a/kernel/bpf/verifier.c b/kernel/bpf/verifier.c
 index 9755279d94cb..cefa64be9a2f 100644
 --- a/kernel/bpf/verifier.c
@@ -715,4 +688,5 @@ index fb4fb81ce5b0..fa93033dc521 100644
  enum bpf_prog_type {
 -- 
 cgit 1.2.3-1.el7
+
 
