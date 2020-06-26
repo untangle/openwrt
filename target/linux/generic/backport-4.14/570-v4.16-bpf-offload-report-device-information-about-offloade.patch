@@ -1,7 +1,7 @@
 From 675fc275a3a2d905535207237402c6d8dcb5fa4b Mon Sep 17 00:00:00 2001
 From: Jakub Kicinski <jakub.kicinski@netronome.com>
 Date: Wed, 27 Dec 2017 18:39:09 -0800
-Subject: bpf: offload: report device information for offloaded programs
+Subject: [PATCH 71/95] bpf: offload: report device information for offloaded programs
 
 Report to the user ifindex and namespace information of offloaded
 programs.  If device has disappeared return -ENODEV.  Specify the
@@ -11,137 +11,9 @@ CC: Eric W. Biederman <ebiederm@xmission.com>
 Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
 Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
 ---
- include/linux/bpf.h            |  2 ++
- include/uapi/linux/bpf.h       |  3 +++
- kernel/bpf/offload.c           | 59 ++++++++++++++++++++++++++++++++++++++++++
- kernel/bpf/syscall.c           |  6 +++++
  tools/include/uapi/linux/bpf.h |  3 +++
  5 files changed, 73 insertions(+)
 
-diff --git a/include/linux/bpf.h b/include/linux/bpf.h
-index 9a916ab34299..7810ae57b357 100644
---- a/include/linux/bpf.h
-+++ b/include/linux/bpf.h
-@@ -531,6 +531,8 @@ static inline struct bpf_prog *bpf_prog_get_type(u32 ufd,
- 
- int bpf_prog_offload_compile(struct bpf_prog *prog);
- void bpf_prog_offload_destroy(struct bpf_prog *prog);
-+int bpf_prog_offload_info_fill(struct bpf_prog_info *info,
-+			       struct bpf_prog *prog);
- 
- #if defined(CONFIG_NET) && defined(CONFIG_BPF_SYSCALL)
- int bpf_prog_offload_init(struct bpf_prog *prog, union bpf_attr *attr);
-diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
-index 69eabfcb9bdb..f2f8b36e2ad4 100644
---- a/include/uapi/linux/bpf.h
-+++ b/include/uapi/linux/bpf.h
-@@ -921,6 +921,9 @@ struct bpf_prog_info {
- 	__u32 nr_map_ids;
- 	__aligned_u64 map_ids;
- 	char name[BPF_OBJ_NAME_LEN];
-+	__u32 ifindex;
-+	__u64 netns_dev;
-+	__u64 netns_ino;
- } __attribute__((aligned(8)));
- 
- struct bpf_map_info {
-diff --git a/kernel/bpf/offload.c b/kernel/bpf/offload.c
-index e4f1668a021c..040d4e0edf3f 100644
---- a/kernel/bpf/offload.c
-+++ b/kernel/bpf/offload.c
-@@ -16,9 +16,11 @@
- #include <linux/bpf.h>
- #include <linux/bpf_verifier.h>
- #include <linux/bug.h>
-+#include <linux/kdev_t.h>
- #include <linux/list.h>
- #include <linux/netdevice.h>
- #include <linux/printk.h>
-+#include <linux/proc_ns.h>
- #include <linux/rtnetlink.h>
- #include <linux/rwsem.h>
- 
-@@ -176,6 +178,63 @@ int bpf_prog_offload_compile(struct bpf_prog *prog)
- 	return bpf_prog_offload_translate(prog);
- }
- 
-+struct ns_get_path_bpf_prog_args {
-+	struct bpf_prog *prog;
-+	struct bpf_prog_info *info;
-+};
-+
-+static struct ns_common *bpf_prog_offload_info_fill_ns(void *private_data)
-+{
-+	struct ns_get_path_bpf_prog_args *args = private_data;
-+	struct bpf_prog_aux *aux = args->prog->aux;
-+	struct ns_common *ns;
-+	struct net *net;
-+
-+	rtnl_lock();
-+	down_read(&bpf_devs_lock);
-+
-+	if (aux->offload) {
-+		args->info->ifindex = aux->offload->netdev->ifindex;
-+		net = dev_net(aux->offload->netdev);
-+		get_net(net);
-+		ns = &net->ns;
-+	} else {
-+		args->info->ifindex = 0;
-+		ns = NULL;
-+	}
-+
-+	up_read(&bpf_devs_lock);
-+	rtnl_unlock();
-+
-+	return ns;
-+}
-+
-+int bpf_prog_offload_info_fill(struct bpf_prog_info *info,
-+			       struct bpf_prog *prog)
-+{
-+	struct ns_get_path_bpf_prog_args args = {
-+		.prog	= prog,
-+		.info	= info,
-+	};
-+	struct inode *ns_inode;
-+	struct path ns_path;
-+	void *res;
-+
-+	res = ns_get_path_cb(&ns_path, bpf_prog_offload_info_fill_ns, &args);
-+	if (IS_ERR(res)) {
-+		if (!info->ifindex)
-+			return -ENODEV;
-+		return PTR_ERR(res);
-+	}
-+
-+	ns_inode = ns_path.dentry->d_inode;
-+	info->netns_dev = new_encode_dev(ns_inode->i_sb->s_dev);
-+	info->netns_ino = ns_inode->i_ino;
-+	path_put(&ns_path);
-+
-+	return 0;
-+}
-+
- const struct bpf_prog_ops bpf_offload_prog_ops = {
- };
- 
-diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
-index e02dafa6f402..ebf0fb23e237 100644
---- a/kernel/bpf/syscall.c
-+++ b/kernel/bpf/syscall.c
-@@ -1707,6 +1707,12 @@ static int bpf_prog_get_info_by_fd(struct bpf_prog *prog,
- 			return -EFAULT;
- 	}
- 
-+	if (bpf_prog_is_dev_bound(prog->aux)) {
-+		err = bpf_prog_offload_info_fill(&info, prog);
-+		if (err)
-+			return err;
-+	}
-+
- done:
- 	if (copy_to_user(uinfo, &info, info_len) ||
- 	    put_user(info_len, &uattr->info.info_len))
 diff --git a/tools/include/uapi/linux/bpf.h b/tools/include/uapi/linux/bpf.h
 index db1b0923a308..4e8c60acfa32 100644
 --- a/tools/include/uapi/linux/bpf.h
@@ -149,7 +21,7 @@ index db1b0923a308..4e8c60acfa32 100644
 @@ -921,6 +921,9 @@ struct bpf_prog_info {
  	__u32 nr_map_ids;
  	__aligned_u64 map_ids;
- 	char name[BPF_OBJ_NAME_LEN];
+ 	char  name[BPF_OBJ_NAME_LEN];
 +	__u32 ifindex;
 +	__u64 netns_dev;
 +	__u64 netns_ino;
@@ -158,4 +30,5 @@ index db1b0923a308..4e8c60acfa32 100644
  struct bpf_map_info {
 -- 
 cgit 1.2.3-1.el7
+
 
