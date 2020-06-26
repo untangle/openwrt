@@ -1,0 +1,48 @@
+From 0badd331491097cc3702d05a6dd0264a434712b2 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Wed, 7 Feb 2018 20:27:13 -0800
+Subject: [PATCH 79/95] libbpf: complete list of strings for guessing program type
+
+It seems that the type guessing feature for libbpf, based on the name of
+the ELF section the program is located in, was inspired from
+samples/bpf/prog_load.c, which was not used by any sample for loading
+programs of certain types such as TC actions and classifiers, or
+LWT-related types. As a consequence, libbpf is not able to guess the
+type of such programs and to load them automatically if type is not
+provided to the `bpf_load_prog()` function.
+
+Add ELF section names associated to those eBPF program types so that
+they can be loaded with e.g. bpftool as well.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/lib/bpf/libbpf.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 71ddc481f349..c64840365433 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -1816,12 +1816,17 @@ static const struct {
+ 	BPF_PROG_SEC("socket",		BPF_PROG_TYPE_SOCKET_FILTER),
+ 	BPF_PROG_SEC("kprobe/",		BPF_PROG_TYPE_KPROBE),
+ 	BPF_PROG_SEC("kretprobe/",	BPF_PROG_TYPE_KPROBE),
++	BPF_PROG_SEC("classifier",	BPF_PROG_TYPE_SCHED_CLS),
++	BPF_PROG_SEC("action",		BPF_PROG_TYPE_SCHED_ACT),
+ 	BPF_PROG_SEC("tracepoint/",	BPF_PROG_TYPE_TRACEPOINT),
+ 	BPF_PROG_SEC("xdp",		BPF_PROG_TYPE_XDP),
+ 	BPF_PROG_SEC("perf_event",	BPF_PROG_TYPE_PERF_EVENT),
+ 	BPF_PROG_SEC("cgroup/skb",	BPF_PROG_TYPE_CGROUP_SKB),
+ 	BPF_PROG_SEC("cgroup/sock",	BPF_PROG_TYPE_CGROUP_SOCK),
+ 	BPF_PROG_SEC("cgroup/dev",	BPF_PROG_TYPE_CGROUP_DEVICE),
++	BPF_PROG_SEC("lwt_in",		BPF_PROG_TYPE_LWT_IN),
++	BPF_PROG_SEC("lwt_out",		BPF_PROG_TYPE_LWT_OUT),
++	BPF_PROG_SEC("lwt_xmit",	BPF_PROG_TYPE_LWT_XMIT),
+ 	BPF_PROG_SEC("sockops",		BPF_PROG_TYPE_SOCK_OPS),
+ 	BPF_PROG_SEC("sk_skb",		BPF_PROG_TYPE_SK_SKB),
+ };
+-- 
+cgit 1.2.3-1.el7
+

@@ -1,0 +1,43 @@
+From 20d5de51e7052ae3fb645d8c5c584ee7383b2a93 Mon Sep 17 00:00:00 2001
+From: Jiri Benc <jbenc@redhat.com>
+Date: Tue, 6 Mar 2018 14:50:10 +0100
+Subject: [PATCH 89/95] tools: bpftool: fix compilation with older headers
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Compilation of bpftool on a distro that lacks eBPF support in the installed
+kernel headers fails with:
+
+common.c: In function ‘is_bpffs’:
+common.c:96:40: error: ‘BPF_FS_MAGIC’ undeclared (first use in this function)
+  return (unsigned long)st_fs.f_type == BPF_FS_MAGIC;
+                                        ^
+Fix this the same way it is already in tools/lib/bpf/libbpf.c and
+tools/lib/api/fs/fs.c.
+
+Signed-off-by: Jiri Benc <jbenc@redhat.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/common.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+index 0b482c0070e0..465995281dcd 100644
+--- a/tools/bpf/bpftool/common.c
++++ b/tools/bpf/bpftool/common.c
+@@ -55,6 +55,10 @@
+ 
+ #include "main.h"
+ 
++#ifndef BPF_FS_MAGIC
++#define BPF_FS_MAGIC		0xcafe4a11
++#endif
++
+ void p_err(const char *fmt, ...)
+ {
+ 	va_list ap;
+-- 
+cgit 1.2.3-1.el7
+
+

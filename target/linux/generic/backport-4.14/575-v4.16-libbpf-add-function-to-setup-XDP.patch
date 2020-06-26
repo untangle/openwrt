@@ -1,0 +1,199 @@
+From 949abbe88436c000cc63fce2bdfeb48b7d06a7df Mon Sep 17 00:00:00 2001
+From: Eric Leblond <eric@regit.org>
+Date: Tue, 30 Jan 2018 21:55:01 +0100
+Subject: [PATCH 76/95] libbpf: add function to setup XDP
+
+Most of the code is taken from set_link_xdp_fd() in bpf_load.c and
+slightly modified to be library compliant.
+
+Signed-off-by: Eric Leblond <eric@regit.org>
+Acked-by: Alexei Starovoitov <ast@kernel.org>
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ tools/lib/bpf/bpf.c    | 122 +++++++++++++++++++++++++++++++++++++++++++++++++
+ tools/lib/bpf/libbpf.c |   2 +
+ tools/lib/bpf/libbpf.h |   4 ++
+ 3 files changed, 128 insertions(+)
+
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index 5128677e4117..bf2772566240 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -25,6 +25,12 @@
+ #include <asm/unistd.h>
+ #include <linux/bpf.h>
+ #include "bpf.h"
++#include "libbpf.h"
++#include "nlattr.h"
++#include <linux/rtnetlink.h>
++#include <linux/if_link.h>
++#include <sys/socket.h>
++#include <errno.h>
+ 
+ /*
+  * When building perf, unistd.h is overridden. __NR_bpf is
+@@ -46,7 +52,9 @@
+ # endif
+ #endif
+ 
++#ifndef min
+ #define min(x, y) ((x) < (y) ? (x) : (y))
++#endif
+ 
+ static inline __u64 ptr_to_u64(const void *ptr)
+ {
+@@ -413,3 +421,117 @@ int bpf_obj_get_info_by_fd(int prog_fd, void *info, __u32 *info_len)
+ 
+ 	return err;
+ }
++
++int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags)
++{
++	struct sockaddr_nl sa;
++	int sock, seq = 0, len, ret = -1;
++	char buf[4096];
++	struct nlattr *nla, *nla_xdp;
++	struct {
++		struct nlmsghdr  nh;
++		struct ifinfomsg ifinfo;
++		char             attrbuf[64];
++	} req;
++	struct nlmsghdr *nh;
++	struct nlmsgerr *err;
++	socklen_t addrlen;
++
++	memset(&sa, 0, sizeof(sa));
++	sa.nl_family = AF_NETLINK;
++
++	sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
++	if (sock < 0) {
++		return -errno;
++	}
++
++	if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
++		ret = -errno;
++		goto cleanup;
++	}
++
++	addrlen = sizeof(sa);
++	if (getsockname(sock, (struct sockaddr *)&sa, &addrlen) < 0) {
++		ret = -errno;
++		goto cleanup;
++	}
++
++	if (addrlen != sizeof(sa)) {
++		ret = -LIBBPF_ERRNO__INTERNAL;
++		goto cleanup;
++	}
++
++	memset(&req, 0, sizeof(req));
++	req.nh.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
++	req.nh.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
++	req.nh.nlmsg_type = RTM_SETLINK;
++	req.nh.nlmsg_pid = 0;
++	req.nh.nlmsg_seq = ++seq;
++	req.ifinfo.ifi_family = AF_UNSPEC;
++	req.ifinfo.ifi_index = ifindex;
++
++	/* started nested attribute for XDP */
++	nla = (struct nlattr *)(((char *)&req)
++				+ NLMSG_ALIGN(req.nh.nlmsg_len));
++	nla->nla_type = NLA_F_NESTED | IFLA_XDP;
++	nla->nla_len = NLA_HDRLEN;
++
++	/* add XDP fd */
++	nla_xdp = (struct nlattr *)((char *)nla + nla->nla_len);
++	nla_xdp->nla_type = IFLA_XDP_FD;
++	nla_xdp->nla_len = NLA_HDRLEN + sizeof(int);
++	memcpy((char *)nla_xdp + NLA_HDRLEN, &fd, sizeof(fd));
++	nla->nla_len += nla_xdp->nla_len;
++
++	/* if user passed in any flags, add those too */
++	if (flags) {
++		nla_xdp = (struct nlattr *)((char *)nla + nla->nla_len);
++		nla_xdp->nla_type = IFLA_XDP_FLAGS;
++		nla_xdp->nla_len = NLA_HDRLEN + sizeof(flags);
++		memcpy((char *)nla_xdp + NLA_HDRLEN, &flags, sizeof(flags));
++		nla->nla_len += nla_xdp->nla_len;
++	}
++
++	req.nh.nlmsg_len += NLA_ALIGN(nla->nla_len);
++
++	if (send(sock, &req, req.nh.nlmsg_len, 0) < 0) {
++		ret = -errno;
++		goto cleanup;
++	}
++
++	len = recv(sock, buf, sizeof(buf), 0);
++	if (len < 0) {
++		ret = -errno;
++		goto cleanup;
++	}
++
++	for (nh = (struct nlmsghdr *)buf; NLMSG_OK(nh, len);
++	     nh = NLMSG_NEXT(nh, len)) {
++		if (nh->nlmsg_pid != sa.nl_pid) {
++			ret = -LIBBPF_ERRNO__WRNGPID;
++			goto cleanup;
++		}
++		if (nh->nlmsg_seq != seq) {
++			ret = -LIBBPF_ERRNO__INVSEQ;
++			goto cleanup;
++		}
++		switch (nh->nlmsg_type) {
++		case NLMSG_ERROR:
++			err = (struct nlmsgerr *)NLMSG_DATA(nh);
++			if (!err->error)
++				continue;
++			ret = err->error;
++			goto cleanup;
++		case NLMSG_DONE:
++			break;
++		default:
++			break;
++		}
++	}
++
++	ret = 0;
++
++cleanup:
++	close(sock);
++	return ret;
++}
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 30c776375118..c60122d3ea85 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -106,6 +106,8 @@ static const char *libbpf_strerror_table[NR_ERRNO] = {
+ 	[ERRCODE_OFFSET(PROG2BIG)]	= "Program too big",
+ 	[ERRCODE_OFFSET(KVER)]		= "Incorrect kernel version",
+ 	[ERRCODE_OFFSET(PROGTYPE)]	= "Kernel doesn't support this program type",
++	[ERRCODE_OFFSET(WRNGPID)]	= "Wrong pid in netlink message",
++	[ERRCODE_OFFSET(INVSEQ)]	= "Invalid netlink sequence",
+ };
+ 
+ int libbpf_strerror(int err, char *buf, size_t size)
+diff --git a/tools/lib/bpf/libbpf.h b/tools/lib/bpf/libbpf.h
+index 6e20003109e0..e42f96900318 100644
+--- a/tools/lib/bpf/libbpf.h
++++ b/tools/lib/bpf/libbpf.h
+@@ -42,6 +42,8 @@ enum libbpf_errno {
+ 	LIBBPF_ERRNO__PROG2BIG,	/* Program too big */
+ 	LIBBPF_ERRNO__KVER,	/* Incorrect kernel version */
+ 	LIBBPF_ERRNO__PROGTYPE,	/* Kernel doesn't support this program type */
++	LIBBPF_ERRNO__WRNGPID,	/* Wrong pid in netlink message */
++	LIBBPF_ERRNO__INVSEQ,	/* Invalid netlink sequence */
+ 	__LIBBPF_ERRNO__END,
+ };
+ 
+@@ -246,4 +248,6 @@ long libbpf_get_error(const void *ptr);
+ 
+ int bpf_prog_load(const char *file, enum bpf_prog_type type,
+ 		  struct bpf_object **pobj, int *prog_fd);
++
++int bpf_set_link_xdp_fd(int ifindex, int fd, __u32 flags);
+ #endif
+-- 
+cgit 1.2.3-1.el7
+
+

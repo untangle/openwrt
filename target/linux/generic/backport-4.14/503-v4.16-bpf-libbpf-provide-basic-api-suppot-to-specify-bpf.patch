@@ -1,0 +1,532 @@
+From 88cda1c9da02c8aa31e1d5dcf22e8a35cc8c19f2 Mon Sep 17 00:00:00 2001
+From: Martin KaFai Lau <kafai@fb.com>
+Date: Wed, 27 Sep 2017 14:37:54 -0700
+Subject: [PATCH 04/95] bpf: libbpf: Provide basic API support to specify BPF obj name
+
+This patch extends the libbpf to provide API support to
+allow specifying BPF object name.
+
+In tools/lib/bpf/libbpf, the C symbol of the function
+and the map is used.  Regarding section name, all maps are
+under the same section named "maps".  Hence, section name
+is not a good choice for map's name.  To be consistent with
+map, bpf_prog also follows and uses its function symbol as
+the prog's name.
+
+This patch adds logic to collect function's symbols in libbpf.
+There is existing codes to collect the map's symbols and no change
+is needed.
+
+The bpf_load_program_name() and bpf_map_create_name() are
+added to take the name argument.  For the other bpf_map_create_xxx()
+variants, a name argument is directly added to them.
+
+In samples/bpf, bpf_load.c in particular, the symbol is also
+used as the map's name and the map symbols has already been
+collected in the existing code.  For bpf_prog, bpf_load.c does
+not collect the function symbol name.  We can consider to collect
+them later if there is a need to continue supporting the bpf_load.c.
+
+Signed-off-by: Martin KaFai Lau <kafai@fb.com>
+Acked-by: Alexei Starovoitov <ast@fb.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ samples/bpf/bpf_load.c                      |   2 +
+ samples/bpf/map_perf_test_user.c            |   1 +
+ tools/include/uapi/linux/bpf.h              |  10 +++
+ tools/lib/bpf/bpf.c                         |  57 +++++++++++----
+ tools/lib/bpf/bpf.h                         |  23 ++++--
+ tools/lib/bpf/libbpf.c                      | 109 +++++++++++++++++++++-------
+ tools/testing/selftests/bpf/test_verifier.c |   2 +-
+ 7 files changed, 157 insertions(+), 47 deletions(-)
+
+diff --git a/samples/bpf/bpf_load.c b/samples/bpf/bpf_load.c
+index 6aa50098dfb8..18b1c8dd0391 100644
+--- a/samples/bpf/bpf_load.c
++++ b/samples/bpf/bpf_load.c
+@@ -221,6 +221,7 @@ static int load_maps(struct bpf_map_data *maps, int nr_maps,
+ 			int inner_map_fd = map_fd[maps[i].def.inner_map_idx];
+ 
+ 			map_fd[i] = bpf_create_map_in_map_node(maps[i].def.type,
++							maps[i].name,
+ 							maps[i].def.key_size,
+ 							inner_map_fd,
+ 							maps[i].def.max_entries,
+@@ -228,6 +229,7 @@ static int load_maps(struct bpf_map_data *maps, int nr_maps,
+ 							numa_node);
+ 		} else {
+ 			map_fd[i] = bpf_create_map_node(maps[i].def.type,
++							maps[i].name,
+ 							maps[i].def.key_size,
+ 							maps[i].def.value_size,
+ 							maps[i].def.max_entries,
+diff --git a/samples/bpf/map_perf_test_user.c b/samples/bpf/map_perf_test_user.c
+index a0310fc70057..519d9af4b04a 100644
+--- a/samples/bpf/map_perf_test_user.c
++++ b/samples/bpf/map_perf_test_user.c
+@@ -137,6 +137,7 @@ static void do_test_lru(enum test_type test, int cpu)
+ 
+ 			inner_lru_map_fds[cpu] =
+ 				bpf_create_map_node(BPF_MAP_TYPE_LRU_HASH,
++						    test_map_names[INNER_LRU_HASH_PREALLOC],
+ 						    sizeof(uint32_t),
+ 						    sizeof(long),
+ 						    inner_lru_hash_size, 0,
+diff --git a/tools/include/uapi/linux/bpf.h b/tools/include/uapi/linux/bpf.h
+index e43491ac4823..6d2137b4cf38 100644
+--- a/tools/include/uapi/linux/bpf.h
++++ b/tools/include/uapi/linux/bpf.h
+@@ -175,6 +175,8 @@ enum bpf_attach_type {
+ /* Specify numa node during map creation */
+ #define BPF_F_NUMA_NODE		(1U << 2)
+ 
++#define BPF_OBJ_NAME_LEN 16U
++
+ union bpf_attr {
+ 	struct { /* anonymous struct used by BPF_MAP_CREATE command */
+ 		__u32	map_type;	/* one of enum bpf_map_type */
+@@ -188,6 +190,7 @@ union bpf_attr {
+ 		__u32	numa_node;	/* numa node (effective only if
+ 					 * BPF_F_NUMA_NODE is set).
+ 					 */
++		__u8	map_name[BPF_OBJ_NAME_LEN];
+ 	};
+ 
+ 	struct { /* anonymous struct used by BPF_MAP_*_ELEM commands */
+@@ -210,6 +213,7 @@ union bpf_attr {
+ 		__aligned_u64	log_buf;	/* user supplied buffer */
+ 		__u32		kern_version;	/* checked when prog_type=kprobe */
+ 		__u32		prog_flags;
++		__u8		prog_name[BPF_OBJ_NAME_LEN];
+ 	};
+ 
+ 	struct { /* anonymous struct used by BPF_OBJ_* commands */
+@@ -812,6 +816,11 @@ struct bpf_prog_info {
+ 	__u32 xlated_prog_len;
+ 	__aligned_u64 jited_prog_insns;
+ 	__aligned_u64 xlated_prog_insns;
++	__u64 load_time;	/* ns since boottime */
++	__u32 created_by_uid;
++	__u32 nr_map_ids;
++	__aligned_u64 map_ids;
++	__u8  name[BPF_OBJ_NAME_LEN];
+ } __attribute__((aligned(8)));
+ 
+ struct bpf_map_info {
+@@ -821,6 +830,7 @@ struct bpf_map_info {
+ 	__u32 value_size;
+ 	__u32 max_entries;
+ 	__u32 map_flags;
++	__u8  name[BPF_OBJ_NAME_LEN];
+ } __attribute__((aligned(8)));
+ 
+ /* User bpf_sock_ops struct to access socket values and specify request ops
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index 1d6907d379c9..daf624e4c720 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -46,6 +46,8 @@
+ # endif
+ #endif
+ 
++#define min(x, y) ((x) < (y) ? (x) : (y))
++
+ static inline __u64 ptr_to_u64(const void *ptr)
+ {
+ 	return (__u64) (unsigned long) ptr;
+@@ -57,10 +59,11 @@ static inline int sys_bpf(enum bpf_cmd cmd, union bpf_attr *attr,
+ 	return syscall(__NR_bpf, cmd, attr, size);
+ }
+ 
+-int bpf_create_map_node(enum bpf_map_type map_type, int key_size,
+-			int value_size, int max_entries, __u32 map_flags,
+-			int node)
++int bpf_create_map_node(enum bpf_map_type map_type, const char *name,
++			int key_size, int value_size, int max_entries,
++			__u32 map_flags, int node)
+ {
++	__u32 name_len = name ? strlen(name) : 0;
+ 	union bpf_attr attr;
+ 
+ 	memset(&attr, '\0', sizeof(attr));
+@@ -70,6 +73,8 @@ int bpf_create_map_node(enum bpf_map_type map_type, int key_size,
+ 	attr.value_size = value_size;
+ 	attr.max_entries = max_entries;
+ 	attr.map_flags = map_flags;
++	memcpy(attr.map_name, name, min(name_len, BPF_OBJ_NAME_LEN - 1));
++
+ 	if (node >= 0) {
+ 		attr.map_flags |= BPF_F_NUMA_NODE;
+ 		attr.numa_node = node;
+@@ -81,14 +86,23 @@ int bpf_create_map_node(enum bpf_map_type map_type, int key_size,
+ int bpf_create_map(enum bpf_map_type map_type, int key_size,
+ 		   int value_size, int max_entries, __u32 map_flags)
+ {
+-	return bpf_create_map_node(map_type, key_size, value_size,
++	return bpf_create_map_node(map_type, NULL, key_size, value_size,
+ 				   max_entries, map_flags, -1);
+ }
+ 
+-int bpf_create_map_in_map_node(enum bpf_map_type map_type, int key_size,
+-			       int inner_map_fd, int max_entries,
++int bpf_create_map_name(enum bpf_map_type map_type, const char *name,
++			int key_size, int value_size, int max_entries,
++			__u32 map_flags)
++{
++	return bpf_create_map_node(map_type, name, key_size, value_size,
++				   max_entries, map_flags, -1);
++}
++
++int bpf_create_map_in_map_node(enum bpf_map_type map_type, const char *name,
++			       int key_size, int inner_map_fd, int max_entries,
+ 			       __u32 map_flags, int node)
+ {
++	__u32 name_len = name ? strlen(name) : 0;
+ 	union bpf_attr attr;
+ 
+ 	memset(&attr, '\0', sizeof(attr));
+@@ -99,6 +113,8 @@ int bpf_create_map_in_map_node(enum bpf_map_type map_type, int key_size,
+ 	attr.inner_map_fd = inner_map_fd;
+ 	attr.max_entries = max_entries;
+ 	attr.map_flags = map_flags;
++	memcpy(attr.map_name, name, min(name_len, BPF_OBJ_NAME_LEN - 1));
++
+ 	if (node >= 0) {
+ 		attr.map_flags |= BPF_F_NUMA_NODE;
+ 		attr.numa_node = node;
+@@ -107,19 +123,24 @@ int bpf_create_map_in_map_node(enum bpf_map_type map_type, int key_size,
+ 	return sys_bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
+ }
+ 
+-int bpf_create_map_in_map(enum bpf_map_type map_type, int key_size,
+-			  int inner_map_fd, int max_entries, __u32 map_flags)
++int bpf_create_map_in_map(enum bpf_map_type map_type, const char *name,
++			  int key_size, int inner_map_fd, int max_entries,
++			  __u32 map_flags)
+ {
+-	return bpf_create_map_in_map_node(map_type, key_size, inner_map_fd,
+-					  max_entries, map_flags, -1);
++	return bpf_create_map_in_map_node(map_type, name, key_size,
++					  inner_map_fd, max_entries, map_flags,
++					  -1);
+ }
+ 
+-int bpf_load_program(enum bpf_prog_type type, const struct bpf_insn *insns,
+-		     size_t insns_cnt, const char *license,
+-		     __u32 kern_version, char *log_buf, size_t log_buf_sz)
++int bpf_load_program_name(enum bpf_prog_type type, const char *name,
++			  const struct bpf_insn *insns,
++			  size_t insns_cnt, const char *license,
++			  __u32 kern_version, char *log_buf,
++			  size_t log_buf_sz)
+ {
+ 	int fd;
+ 	union bpf_attr attr;
++	__u32 name_len = name ? strlen(name) : 0;
+ 
+ 	bzero(&attr, sizeof(attr));
+ 	attr.prog_type = type;
+@@ -130,6 +151,7 @@ int bpf_load_program(enum bpf_prog_type type, const struct bpf_insn *insns,
+ 	attr.log_size = 0;
+ 	attr.log_level = 0;
+ 	attr.kern_version = kern_version;
++	memcpy(attr.prog_name, name, min(name_len, BPF_OBJ_NAME_LEN - 1));
+ 
+ 	fd = sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+ 	if (fd >= 0 || !log_buf || !log_buf_sz)
+@@ -143,6 +165,15 @@ int bpf_load_program(enum bpf_prog_type type, const struct bpf_insn *insns,
+ 	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+ }
+ 
++int bpf_load_program(enum bpf_prog_type type, const struct bpf_insn *insns,
++		     size_t insns_cnt, const char *license,
++		     __u32 kern_version, char *log_buf,
++		     size_t log_buf_sz)
++{
++	return bpf_load_program_name(type, NULL, insns, insns_cnt, license,
++				     kern_version, log_buf, log_buf_sz);
++}
++
+ int bpf_verify_program(enum bpf_prog_type type, const struct bpf_insn *insns,
+ 		       size_t insns_cnt, int strict_alignment,
+ 		       const char *license, __u32 kern_version,
+diff --git a/tools/lib/bpf/bpf.h b/tools/lib/bpf/bpf.h
+index b8ea5843c39e..118d00535a0d 100644
+--- a/tools/lib/bpf/bpf.h
++++ b/tools/lib/bpf/bpf.h
+@@ -24,19 +24,28 @@
+ #include <linux/bpf.h>
+ #include <stddef.h>
+ 
+-int bpf_create_map_node(enum bpf_map_type map_type, int key_size,
+-			int value_size, int max_entries, __u32 map_flags,
+-			int node);
++int bpf_create_map_node(enum bpf_map_type map_type, const char *name,
++			int key_size, int value_size, int max_entries,
++			__u32 map_flags, int node);
++int bpf_create_map_name(enum bpf_map_type map_type, const char *name,
++			int key_size, int value_size, int max_entries,
++			__u32 map_flags);
+ int bpf_create_map(enum bpf_map_type map_type, int key_size, int value_size,
+ 		   int max_entries, __u32 map_flags);
+-int bpf_create_map_in_map_node(enum bpf_map_type map_type, int key_size,
+-			       int inner_map_fd, int max_entries,
++int bpf_create_map_in_map_node(enum bpf_map_type map_type, const char *name,
++			       int key_size, int inner_map_fd, int max_entries,
+ 			       __u32 map_flags, int node);
+-int bpf_create_map_in_map(enum bpf_map_type map_type, int key_size,
+-			  int inner_map_fd, int max_entries, __u32 map_flags);
++int bpf_create_map_in_map(enum bpf_map_type map_type, const char *name,
++			  int key_size, int inner_map_fd, int max_entries,
++			  __u32 map_flags);
+ 
+ /* Recommend log buffer size */
+ #define BPF_LOG_BUF_SIZE 65536
++int bpf_load_program_name(enum bpf_prog_type type, const char *name,
++			  const struct bpf_insn *insns,
++			  size_t insns_cnt, const char *license,
++			  __u32 kern_version, char *log_buf,
++			  size_t log_buf_sz);
+ int bpf_load_program(enum bpf_prog_type type, const struct bpf_insn *insns,
+ 		     size_t insns_cnt, const char *license,
+ 		     __u32 kern_version, char *log_buf,
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 35f6dfcdc565..4f402dcdf372 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -171,6 +171,7 @@ int libbpf_strerror(int err, char *buf, size_t size)
+ struct bpf_program {
+ 	/* Index in elf obj file, for relocation use. */
+ 	int idx;
++	char *name;
+ 	char *section_name;
+ 	struct bpf_insn *insns;
+ 	size_t insns_cnt;
+@@ -283,6 +284,7 @@ static void bpf_program__exit(struct bpf_program *prog)
+ 	prog->clear_priv = NULL;
+ 
+ 	bpf_program__unload(prog);
++	zfree(&prog->name);
+ 	zfree(&prog->section_name);
+ 	zfree(&prog->insns);
+ 	zfree(&prog->reloc_desc);
+@@ -293,26 +295,27 @@ static void bpf_program__exit(struct bpf_program *prog)
+ }
+ 
+ static int
+-bpf_program__init(void *data, size_t size, char *name, int idx,
+-		    struct bpf_program *prog)
++bpf_program__init(void *data, size_t size, char *section_name, int idx,
++		  struct bpf_program *prog)
+ {
+ 	if (size < sizeof(struct bpf_insn)) {
+-		pr_warning("corrupted section '%s'\n", name);
++		pr_warning("corrupted section '%s'\n", section_name);
+ 		return -EINVAL;
+ 	}
+ 
+ 	bzero(prog, sizeof(*prog));
+ 
+-	prog->section_name = strdup(name);
++	prog->section_name = strdup(section_name);
+ 	if (!prog->section_name) {
+-		pr_warning("failed to alloc name for prog %s\n",
+-			   name);
++		pr_warning("failed to alloc name for prog under section %s\n",
++			   section_name);
+ 		goto errout;
+ 	}
+ 
+ 	prog->insns = malloc(size);
+ 	if (!prog->insns) {
+-		pr_warning("failed to alloc insns for %s\n", name);
++		pr_warning("failed to alloc insns for prog under section %s\n",
++			   section_name);
+ 		goto errout;
+ 	}
+ 	prog->insns_cnt = size / sizeof(struct bpf_insn);
+@@ -331,12 +334,12 @@ errout:
+ 
+ static int
+ bpf_object__add_program(struct bpf_object *obj, void *data, size_t size,
+-			char *name, int idx)
++			char *section_name, int idx)
+ {
+ 	struct bpf_program prog, *progs;
+ 	int nr_progs, err;
+ 
+-	err = bpf_program__init(data, size, name, idx, &prog);
++	err = bpf_program__init(data, size, section_name, idx, &prog);
+ 	if (err)
+ 		return err;
+ 
+@@ -350,8 +353,8 @@ bpf_object__add_program(struct bpf_object *obj, void *data, size_t size,
+ 		 * is still valid, so don't need special treat for
+ 		 * bpf_close_object().
+ 		 */
+-		pr_warning("failed to alloc a new program '%s'\n",
+-			   name);
++		pr_warning("failed to alloc a new program under section '%s'\n",
++			   section_name);
+ 		bpf_program__exit(&prog);
+ 		return -ENOMEM;
+ 	}
+@@ -364,6 +367,54 @@ bpf_object__add_program(struct bpf_object *obj, void *data, size_t size,
+ 	return 0;
+ }
+ 
++static int
++bpf_object__init_prog_names(struct bpf_object *obj)
++{
++	Elf_Data *symbols = obj->efile.symbols;
++	struct bpf_program *prog;
++	size_t pi, si;
++
++	for (pi = 0; pi < obj->nr_programs; pi++) {
++		char *name = NULL;
++
++		prog = &obj->programs[pi];
++
++		for (si = 0; si < symbols->d_size / sizeof(GElf_Sym) && !name;
++		     si++) {
++			GElf_Sym sym;
++
++			if (!gelf_getsym(symbols, si, &sym))
++				continue;
++			if (sym.st_shndx != prog->idx)
++				continue;
++
++			name = elf_strptr(obj->efile.elf,
++					  obj->efile.strtabidx,
++					  sym.st_name);
++			if (!name) {
++				pr_warning("failed to get sym name string for prog %s\n",
++					   prog->section_name);
++				return -LIBBPF_ERRNO__LIBELF;
++			}
++		}
++
++		if (!name) {
++			pr_warning("failed to find sym for prog %s\n",
++				   prog->section_name);
++			return -EINVAL;
++		}
++
++		prog->name = strdup(name);
++		if (!prog->name) {
++			pr_warning("failed to allocate memory for prog sym %s\n",
++				   name);
++			return -ENOMEM;
++		}
++	}
++
++	return 0;
++}
++
+ static struct bpf_object *bpf_object__new(const char *path,
+ 					  void *obj_buf,
+ 					  size_t obj_buf_sz)
+@@ -766,8 +817,12 @@ static int bpf_object__elf_collect(struct bpf_object *obj)
+ 		pr_warning("Corrupted ELF file: index of strtab invalid\n");
+ 		return LIBBPF_ERRNO__FORMAT;
+ 	}
+-	if (obj->efile.maps_shndx >= 0)
++	if (obj->efile.maps_shndx >= 0) {
+ 		err = bpf_object__init_maps(obj);
++		if (err)
++			goto out;
++	}
++	err = bpf_object__init_prog_names(obj);
+ out:
+ 	return err;
+ }
+@@ -870,11 +925,12 @@ bpf_object__create_maps(struct bpf_object *obj)
+ 		struct bpf_map_def *def = &obj->maps[i].def;
+ 		int *pfd = &obj->maps[i].fd;
+ 
+-		*pfd = bpf_create_map(def->type,
+-				      def->key_size,
+-				      def->value_size,
+-				      def->max_entries,
+-				      0);
++		*pfd = bpf_create_map_name(def->type,
++					   obj->maps[i].name,
++					   def->key_size,
++					   def->value_size,
++					   def->max_entries,
++					   0);
+ 		if (*pfd < 0) {
+ 			size_t j;
+ 			int err = *pfd;
+@@ -982,7 +1038,7 @@ static int bpf_object__collect_reloc(struct bpf_object *obj)
+ }
+ 
+ static int
+-load_program(enum bpf_prog_type type, struct bpf_insn *insns,
++load_program(enum bpf_prog_type type, const char *name, struct bpf_insn *insns,
+ 	     int insns_cnt, char *license, u32 kern_version, int *pfd)
+ {
+ 	int ret;
+@@ -995,8 +1051,8 @@ load_program(enum bpf_prog_type type, struct bpf_insn *insns,
+ 	if (!log_buf)
+ 		pr_warning("Alloc log buffer for bpf loader error, continue without log\n");
+ 
+-	ret = bpf_load_program(type, insns, insns_cnt, license,
+-			       kern_version, log_buf, BPF_LOG_BUF_SIZE);
++	ret = bpf_load_program_name(type, name, insns, insns_cnt, license,
++				    kern_version, log_buf, BPF_LOG_BUF_SIZE);
+ 
+ 	if (ret >= 0) {
+ 		*pfd = ret;
+@@ -1021,9 +1077,9 @@ load_program(enum bpf_prog_type type, struct bpf_insn *insns,
+ 		if (type != BPF_PROG_TYPE_KPROBE) {
+ 			int fd;
+ 
+-			fd = bpf_load_program(BPF_PROG_TYPE_KPROBE, insns,
+-					      insns_cnt, license, kern_version,
+-					      NULL, 0);
++			fd = bpf_load_program_name(BPF_PROG_TYPE_KPROBE, name,
++						   insns, insns_cnt, license,
++						   kern_version, NULL, 0);
+ 			if (fd >= 0) {
+ 				close(fd);
+ 				ret = -LIBBPF_ERRNO__PROGTYPE;
+@@ -1067,8 +1123,8 @@ bpf_program__load(struct bpf_program *prog,
+ 			pr_warning("Program '%s' is inconsistent: nr(%d) != 1\n",
+ 				   prog->section_name, prog->instances.nr);
+ 		}
+-		err = load_program(prog->type, prog->insns, prog->insns_cnt,
+-				   license, kern_version, &fd);
++		err = load_program(prog->type, prog->name, prog->insns,
++				   prog->insns_cnt, license, kern_version, &fd);
+ 		if (!err)
+ 			prog->instances.fds[0] = fd;
+ 		goto out;
+@@ -1096,7 +1152,8 @@ bpf_program__load(struct bpf_program *prog,
+ 			continue;
+ 		}
+ 
+-		err = load_program(prog->type, result.new_insn_ptr,
++		err = load_program(prog->type, prog->name,
++				   result.new_insn_ptr,
+ 				   result.new_insn_cnt,
+ 				   license, kern_version, &fd);
+ 
+diff --git a/tools/testing/selftests/bpf/test_verifier.c b/tools/testing/selftests/bpf/test_verifier.c
+index a0426147523d..290d5056c165 100644
+--- a/tools/testing/selftests/bpf/test_verifier.c
++++ b/tools/testing/selftests/bpf/test_verifier.c
+@@ -6939,7 +6939,7 @@ static int create_map_in_map(void)
+ 		return inner_map_fd;
+ 	}
+ 
+-	outer_map_fd = bpf_create_map_in_map(BPF_MAP_TYPE_ARRAY_OF_MAPS,
++	outer_map_fd = bpf_create_map_in_map(BPF_MAP_TYPE_ARRAY_OF_MAPS, NULL,
+ 					     sizeof(int), inner_map_fd, 1, 0);
+ 	if (outer_map_fd < 0)
+ 		printf("Failed to create array of maps '%s'!\n",
+-- 
+cgit 1.2.3-1.el7
+
+

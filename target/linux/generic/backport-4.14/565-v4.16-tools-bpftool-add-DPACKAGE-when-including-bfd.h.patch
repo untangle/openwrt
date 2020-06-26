@@ -1,0 +1,59 @@
+From 39b72ccdb278f53735af1a378e67e6110e3210ad Mon Sep 17 00:00:00 2001
+From: Jiong Wang <jiong.wang@netronome.com>
+Date: Tue, 16 Jan 2018 15:51:47 -0800
+Subject: [PATCH 66/95] tools: bpftool: add -DPACKAGE when including bfd.h
+
+bfd.h is requiring including of config.h except when PACKAGE or
+PACKAGE_VERSION are defined.
+
+  /* PR 14072: Ensure that config.h is included first.  */
+  #if !defined PACKAGE && !defined PACKAGE_VERSION
+  #error config.h must be included before this header
+  #endif
+
+This check has been introduced since May-2012. It doesn't show up in bfd.h
+on some Linux distribution, probably because distributions have remove it
+when building the package.
+
+However, sometimes the user might just build libfd from source code then
+link bpftool against it. For this case, bfd.h will be original that we need
+to define PACKAGE or PACKAGE_VERSION.
+
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Jiong Wang <jiong.wang@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Makefile   | 2 +-
+ tools/build/feature/Makefile | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index 2237bc43f71c..26901ec87361 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -39,7 +39,7 @@ CC = gcc
+ 
+ CFLAGS += -O2
+ CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow
+-CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf -I$(srctree)/kernel/bpf/
++CFLAGS += -DPACKAGE='"bpftool"' -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi -I$(srctree)/tools/include -I$(srctree)/tools/lib/bpf -I$(srctree)/kernel/bpf/
+ CFLAGS += -DBPFTOOL_VERSION='"$(BPFTOOL_VERSION)"'
+ LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
+ 
+diff --git a/tools/build/feature/Makefile b/tools/build/feature/Makefile
+index 17f2c73fff8b..bc715f6ac320 100644
+--- a/tools/build/feature/Makefile
++++ b/tools/build/feature/Makefile
+@@ -190,7 +190,7 @@ $(OUTPUT)test-libbfd.bin:
+ 	$(BUILD) -DPACKAGE='"perf"' -lbfd -lz -liberty -ldl
+ 
+ $(OUTPUT)test-disassembler-four-args.bin:
+-	$(BUILD) -lbfd -lopcodes
++	$(BUILD) -DPACKAGE='"perf"' -lbfd -lopcodes
+ 
+ $(OUTPUT)test-liberty.bin:
+ 	$(CC) $(CFLAGS) -Wall -Werror -o $@ test-libbfd.c -DPACKAGE='"perf"' $(LDFLAGS) -lbfd -ldl -liberty
+-- 
+cgit 1.2.3-1.el7
+
+

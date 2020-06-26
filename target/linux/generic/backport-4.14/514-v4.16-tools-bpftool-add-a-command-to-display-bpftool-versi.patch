@@ -1,0 +1,84 @@
+From 821cfbb0dcfbb24506dc6958361ca2b80b928049 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 19 Oct 2017 15:46:26 -0700
+Subject: [PATCH 15/95] tools: bpftool: add a command to display bpftool version
+
+This command can be used to print the version of the tool, which is in
+fact the version from Linux taken from usr/include/linux/version.h.
+
+Example usage:
+
+    $ bpftool version
+    bpftool v4.14.0
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool.rst |  2 ++
+ tools/bpf/bpftool/main.c                    | 14 +++++++++++++-
+ 2 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool.rst b/tools/bpf/bpftool/Documentation/bpftool.rst
+index f1df1893fb54..45ad8baf1915 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool.rst
+@@ -14,6 +14,8 @@ SYNOPSIS
+ 
+ 	**bpftool** batch file *FILE*
+ 
++	**bpftool** version
++
+ 	*OBJECT* := { **map** | **program** }
+ 
+ 	*MAP-COMMANDS* :=
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index 8662199ee050..814d19e1b53f 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -37,6 +37,7 @@
+ #include <ctype.h>
+ #include <errno.h>
+ #include <linux/bpf.h>
++#include <linux/version.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -62,13 +63,23 @@ static int do_help(int argc, char **argv)
+ 	fprintf(stderr,
+ 		"Usage: %s OBJECT { COMMAND | help }\n"
+ 		"       %s batch file FILE\n"
++		"       %s version\n"
+ 		"\n"
+ 		"       OBJECT := { prog | map }\n",
+-		bin_name, bin_name);
++		bin_name, bin_name, bin_name);
+ 
+ 	return 0;
+ }
+ 
++static int do_version(int argc, char **argv)
++{
++	printf("%s v%d.%d.%d\n", bin_name,
++	       LINUX_VERSION_CODE >> 16,
++	       LINUX_VERSION_CODE >> 8 & 0xf,
++	       LINUX_VERSION_CODE & 0xf);
++	return 0;
++}
++
+ int cmd_select(const struct cmd *cmds, int argc, char **argv,
+ 	       int (*help)(int argc, char **argv))
+ {
+@@ -128,6 +139,7 @@ static const struct cmd cmds[] = {
+ 	{ "batch",	do_batch },
+ 	{ "prog",	do_prog },
+ 	{ "map",	do_map },
++	{ "version",	do_version },
+ 	{ 0 }
+ };
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

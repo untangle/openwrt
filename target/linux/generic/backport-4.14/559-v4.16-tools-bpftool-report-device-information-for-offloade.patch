@@ -1,0 +1,123 @@
+From 522622104ebabbc3372d2fad706b4d30cee13319 Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Wed, 27 Dec 2017 18:39:10 -0800
+Subject: [PATCH 60/95] tools: bpftool: report device information for offloaded programs
+
+Print the just-exposed device information about device to which
+program is bound.
+
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/common.c | 52 ++++++++++++++++++++++++++++++++++++++++++++++
+ tools/bpf/bpftool/main.h   |  2 ++
+ tools/bpf/bpftool/prog.c   |  3 +++
+ 3 files changed, 57 insertions(+)
+
+diff --git a/tools/bpf/bpftool/common.c b/tools/bpf/bpftool/common.c
+index b62c94e3997a..6601c95a9258 100644
+--- a/tools/bpf/bpftool/common.c
++++ b/tools/bpf/bpftool/common.c
+@@ -44,7 +44,9 @@
+ #include <unistd.h>
+ #include <linux/limits.h>
+ #include <linux/magic.h>
++#include <net/if.h>
+ #include <sys/mount.h>
++#include <sys/stat.h>
+ #include <sys/types.h>
+ #include <sys/vfs.h>
+ 
+@@ -412,3 +414,53 @@ void delete_pinned_obj_table(struct pinned_obj_table *tab)
+ 		free(obj);
+ 	}
+ }
++
++static char *
++ifindex_to_name_ns(__u32 ifindex, __u32 ns_dev, __u32 ns_ino, char *buf)
++{
++	struct stat st;
++	int err;
++
++	err = stat("/proc/self/ns/net", &st);
++	if (err) {
++		p_err("Can't stat /proc/self: %s", strerror(errno));
++		return NULL;
++	}
++
++	if (st.st_dev != ns_dev || st.st_ino != ns_ino)
++		return NULL;
++
++	return if_indextoname(ifindex, buf);
++}
++
++void print_dev_plain(__u32 ifindex, __u64 ns_dev, __u64 ns_inode)
++{
++	char name[IF_NAMESIZE];
++
++	if (!ifindex)
++		return;
++
++	printf(" dev ");
++	if (ifindex_to_name_ns(ifindex, ns_dev, ns_inode, name))
++		printf("%s", name);
++	else
++		printf("ifindex %u ns_dev %llu ns_ino %llu",
++		       ifindex, ns_dev, ns_inode);
++}
++
++void print_dev_json(__u32 ifindex, __u64 ns_dev, __u64 ns_inode)
++{
++	char name[IF_NAMESIZE];
++
++	if (!ifindex)
++		return;
++
++	jsonw_name(json_wtr, "dev");
++	jsonw_start_object(json_wtr);
++	jsonw_uint_field(json_wtr, "ifindex", ifindex);
++	jsonw_uint_field(json_wtr, "ns_dev", ns_dev);
++	jsonw_uint_field(json_wtr, "ns_inode", ns_inode);
++	if (ifindex_to_name_ns(ifindex, ns_dev, ns_inode, name))
++		jsonw_string_field(json_wtr, "ifname", name);
++	jsonw_end_object(json_wtr);
++}
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index 8f6d3cac0347..65b526fe6e7e 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -96,6 +96,8 @@ struct pinned_obj {
+ int build_pinned_obj_table(struct pinned_obj_table *table,
+ 			   enum bpf_obj_type type);
+ void delete_pinned_obj_table(struct pinned_obj_table *tab);
++void print_dev_plain(__u32 ifindex, __u64 ns_dev, __u64 ns_inode);
++void print_dev_json(__u32 ifindex, __u64 ns_dev, __u64 ns_inode);
+ 
+ struct cmd {
+ 	const char *cmd;
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index fd0873178503..98f871ed53d6 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -230,6 +230,8 @@ static void print_prog_json(struct bpf_prog_info *info, int fd)
+ 		     info->tag[0], info->tag[1], info->tag[2], info->tag[3],
+ 		     info->tag[4], info->tag[5], info->tag[6], info->tag[7]);
+ 
++	print_dev_json(info->ifindex, info->netns_dev, info->netns_ino);
++
+ 	if (info->load_time) {
+ 		char buf[32];
+ 
+@@ -287,6 +289,7 @@ static void print_prog_plain(struct bpf_prog_info *info, int fd)
+ 
+ 	printf("tag ");
+ 	fprint_hex(stdout, info->tag, BPF_TAG_SIZE, "");
++	print_dev_plain(info->ifindex, info->netns_dev, info->netns_ino);
+ 	printf("\n");
+ 
+ 	if (info->load_time) {
+-- 
+cgit 1.2.3-1.el7
+
+
