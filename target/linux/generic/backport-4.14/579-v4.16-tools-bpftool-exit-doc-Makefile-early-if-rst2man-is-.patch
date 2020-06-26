@@ -1,0 +1,44 @@
+From 92426820f7616caebdf6ba665f749102a670b3d4 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Wed, 7 Feb 2018 20:27:14 -0800
+Subject: [PATCH 80/95] tools: bpftool: exit doc Makefile early if rst2man is not available
+
+If rst2man is not available on the system, running `make doc` from the
+bpftool directory fails with an error message. However, it creates empty
+manual pages (.8 files in this case). A subsequent call to `make
+doc-install` would then succeed and install those empty man pages on the
+system.
+
+To prevent this, raise a Makefile error and exit immediately if rst2man
+is not available before generating the pages from the rst documentation.
+
+Fixes: ff69c21a85a4 ("tools: bpftool: add documentation")
+Reported-by: Jason van Aaardt <jason.vanaardt@netronome.com>
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Reviewed-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/Makefile | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/tools/bpf/bpftool/Documentation/Makefile b/tools/bpf/bpftool/Documentation/Makefile
+index c462a928e03d..a9d47c1558bb 100644
+--- a/tools/bpf/bpftool/Documentation/Makefile
++++ b/tools/bpf/bpftool/Documentation/Makefile
+@@ -23,7 +23,12 @@ DOC_MAN8 = $(addprefix $(OUTPUT),$(_DOC_MAN8))
+ man: man8
+ man8: $(DOC_MAN8)
+ 
++RST2MAN_DEP := $(shell command -v rst2man 2>/dev/null)
++
+ $(OUTPUT)%.8: %.rst
++ifndef RST2MAN_DEP
++	$(error "rst2man not found, but required to generate man pages")
++endif
+ 	$(QUIET_GEN)rst2man $< > $@
+ 
+ clean:
+-- 
+cgit 1.2.3-1.el7
+
+

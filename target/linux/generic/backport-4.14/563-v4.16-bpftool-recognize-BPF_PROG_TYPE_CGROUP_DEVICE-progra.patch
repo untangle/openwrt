@@ -1,0 +1,47 @@
+From 45e5e1212af4633aa76db387ccaac8b41c8a7b6c Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Mon, 15 Jan 2018 19:16:15 +0000
+Subject: [PATCH 64/95] bpftool: recognize BPF_PROG_TYPE_CGROUP_DEVICE programs
+
+Bpftool doesn't recognize BPF_PROG_TYPE_CGROUP_DEVICE programs,
+so the prog show command prints the numeric type value:
+
+$ bpftool prog show
+1: type 15  name bpf_prog1  tag ac9f93dbfd6d9b74
+	loaded_at Jan 15/07:58  uid 0
+	xlated 96B  jited 105B  memlock 4096B
+
+This patch defines the corresponding textual representation:
+
+$ bpftool prog show
+1: cgroup_device  name bpf_prog1  tag ac9f93dbfd6d9b74
+	loaded_at Jan 15/07:58  uid 0
+	xlated 96B  jited 105B  memlock 4096B
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Quentin Monnet <quentin.monnet@netronome.com>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/prog.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index c6a28be4665c..099e21cf1b5c 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -66,6 +66,7 @@ static const char * const prog_type_name[] = {
+ 	[BPF_PROG_TYPE_LWT_XMIT]	= "lwt_xmit",
+ 	[BPF_PROG_TYPE_SOCK_OPS]	= "sock_ops",
+ 	[BPF_PROG_TYPE_SK_SKB]		= "sk_skb",
++	[BPF_PROG_TYPE_CGROUP_DEVICE]	= "cgroup_device",
+ };
+ 
+ static void print_boot_time(__u64 nsecs, char *buf, unsigned int size)
+-- 
+cgit 1.2.3-1.el7
+
+

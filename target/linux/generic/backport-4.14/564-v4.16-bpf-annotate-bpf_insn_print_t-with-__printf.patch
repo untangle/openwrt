@@ -1,0 +1,33 @@
+From 48b325632641da27a241912d66b38a1221ab425f Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Tue, 16 Jan 2018 15:51:46 -0800
+Subject: [PATCH 65/95] bpf: annotate bpf_insn_print_t with __printf
+
+Functions of type bpf_insn_print_t take printf-like format
+string, mark the type accordingly.
+
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ kernel/bpf/disasm.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/bpf/disasm.h b/kernel/bpf/disasm.h
+index e0857d016f89..266fe8ee542b 100644
+--- a/kernel/bpf/disasm.h
++++ b/kernel/bpf/disasm.h
+@@ -29,8 +29,8 @@ extern const char *const bpf_class_string[8];
+ 
+ const char *func_id_name(int id);
+ 
+-typedef void (*bpf_insn_print_t)(struct bpf_verifier_env *env,
+-				 const char *, ...);
++typedef __printf(2, 3) void (*bpf_insn_print_t)(struct bpf_verifier_env *env,
++						const char *, ...);
+ typedef const char *(*bpf_insn_revmap_call_t)(void *private_data,
+ 					      const struct bpf_insn *insn);
+ typedef const char *(*bpf_insn_print_imm_t)(void *private_data,
+-- 
+cgit 1.2.3-1.el7
+

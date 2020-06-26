@@ -1,0 +1,29 @@
+From 9e88b9312acb9b80554c48b58668fb144720333a Mon Sep 17 00:00:00 2001
+From: Ivan Babrou <ivan@cloudflare.com>
+Date: Wed, 19 Dec 2018 12:08:03 -0800
+Subject: [PATCH 91/95] tools: bpftool: do not force gcc as CC
+
+This allows transparent cross-compilation with CROSS_COMPILE by
+relying on 7ed1c1901fe5 ("tools: fix cross-compile var clobbering").
+
+Signed-off-by: Ivan Babrou <ivan@cloudflare.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Makefile | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index 1bea6b979082..492f0f24e2d3 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -35,8 +35,6 @@ $(LIBBPF)-clean:
+ prefix ?= /usr/local
+ bash_compdir ?= /usr/share/bash-completion/completions
+ 
+-CC = gcc
+-
+ CFLAGS += -O2
+ CFLAGS += -W -Wall -Wextra -Wno-unused-parameter -Wshadow -Wno-missing-field-initializers
+ CFLAGS += -DPACKAGE='"bpftool"' -D__EXPORTED_HEADERS__ \
+-- 
+cgit 1.2.3-1.el7

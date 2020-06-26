@@ -1,0 +1,127 @@
+From a2bc2e5c2c0604bf5366b5e56ef46335adaf7491 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Mon, 23 Oct 2017 09:24:06 -0700
+Subject: [PATCH 17/95] tools: bpftool: add option parsing to bpftool, --help and --version
+
+Add an option parsing facility to bpftool, in prevision of future
+options for demanding JSON output. Currently, two options are added:
+--help and --version, that act the same as the respective commands
+`help` and `version`.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-map.rst  |  8 +++++++
+ tools/bpf/bpftool/Documentation/bpftool-prog.rst |  8 +++++++
+ tools/bpf/bpftool/Documentation/bpftool.rst      |  8 +++++++
+ tools/bpf/bpftool/main.c                         | 27 +++++++++++++++++++++++-
+ 4 files changed, 50 insertions(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-map.rst b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+index ff63e89e4b6c..5210c4fab356 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-map.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+@@ -68,6 +68,14 @@ DESCRIPTION
+ 	**bpftool map help**
+ 		  Print short help message.
+ 
++OPTIONS
++=======
++	-h, --help
++		  Print short generic help message (similar to **bpftool help**).
++
++	-v, --version
++		  Print version number (similar to **bpftool version**).
++
+ EXAMPLES
+ ========
+ **# bpftool map show**
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-prog.rst b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+index 69b3770370c8..6620a81d9dc9 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-prog.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+@@ -50,6 +50,14 @@ DESCRIPTION
+ 	**bpftool prog help**
+ 		  Print short help message.
+ 
++OPTIONS
++=======
++	-h, --help
++		  Print short generic help message (similar to **bpftool help**).
++
++	-v, --version
++		  Print version number (similar to **bpftool version**).
++
+ EXAMPLES
+ ========
+ **# bpftool prog show**
+diff --git a/tools/bpf/bpftool/Documentation/bpftool.rst b/tools/bpf/bpftool/Documentation/bpftool.rst
+index 45ad8baf1915..9c04cd6677bd 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool.rst
+@@ -31,6 +31,14 @@ DESCRIPTION
+ 	Note that format of the output of all tools is not guaranteed to be
+ 	stable and should not be depended upon.
+ 
++OPTIONS
++=======
++	-h, --help
++		  Print short help message (similar to **bpftool help**).
++
++	-v, --version
++		  Print version number (similar to **bpftool version**).
++
+ SEE ALSO
+ ========
+ 	**bpftool-map**\ (8), **bpftool-prog**\ (8)
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index 814d19e1b53f..613e3c75f78a 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -36,6 +36,7 @@
+ #include <bfd.h>
+ #include <ctype.h>
+ #include <errno.h>
++#include <getopt.h>
+ #include <linux/bpf.h>
+ #include <linux/version.h>
+ #include <stdio.h>
+@@ -215,8 +216,32 @@ err_close:
+ 
+ int main(int argc, char **argv)
+ {
++	static const struct option options[] = {
++		{ "help",	no_argument,	NULL,	'h' },
++		{ "version",	no_argument,	NULL,	'V' },
++		{ 0 }
++	};
++	int opt;
++
++	last_do_help = do_help;
+ 	bin_name = argv[0];
+-	NEXT_ARG();
++
++	while ((opt = getopt_long(argc, argv, "Vh",
++				  options, NULL)) >= 0) {
++		switch (opt) {
++		case 'V':
++			return do_version(argc, argv);
++		case 'h':
++			return do_help(argc, argv);
++		default:
++			usage();
++		}
++	}
++
++	argc -= optind;
++	argv += optind;
++	if (argc < 0)
++		usage();
+ 
+ 	bfd_init();
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

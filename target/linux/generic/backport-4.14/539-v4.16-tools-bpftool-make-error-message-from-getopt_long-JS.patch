@@ -1,0 +1,53 @@
+From 146882a37da7aa566c7ec088b42c6495d769f2ba Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Tue, 28 Nov 2017 17:44:30 -0800
+Subject: [PATCH 40/95] tools: bpftool: make error message from getopt_long() JSON-friendly
+
+If `getopt_long()` meets an unknown option, it prints its own error
+message to standard error output. While this does not strictly break
+JSON output, it is the only case bpftool prints something to standard
+error output if JSON output is required. All other errors are printed on
+standard output as JSON objects, so that an external program does not
+have to parse stderr.
+
+This is changed by setting the global variable `opterr` to 0.
+Furthermore, p_err() is used to reproduce the error message in a more
+JSON-friendly way, so that users still get to know what the erroneous
+option is.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/main.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index d72dd73a4016..d294bc8168be 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -288,6 +288,7 @@ int main(int argc, char **argv)
+ 	hash_init(prog_table.table);
+ 	hash_init(map_table.table);
+ 
++	opterr = 0;
+ 	while ((opt = getopt_long(argc, argv, "Vhpjf",
+ 				  options, NULL)) >= 0) {
+ 		switch (opt) {
+@@ -313,7 +314,11 @@ int main(int argc, char **argv)
+ 			show_pinned = true;
+ 			break;
+ 		default:
+-			usage();
++			p_err("unrecognized option '%s'", argv[optind - 1]);
++			if (json_output)
++				clean_and_exit(-1);
++			else
++				usage();
+ 		}
+ 	}
+ 
+-- 
+cgit 1.2.3-1.el7
+
+
