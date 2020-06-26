@@ -1,7 +1,7 @@
 From bbf48c18ee0cd18b53712aa09aefa29b64b3976e Mon Sep 17 00:00:00 2001
 From: Eric Leblond <eric@regit.org>
 Date: Tue, 30 Jan 2018 21:55:02 +0100
-Subject: libbpf: add error reporting in XDP
+Subject: [PATCH 77/95] libbpf: add error reporting in XDP
 
 Parse netlink ext attribute to get the error message returned by
 the card. Code is partially take from libnl.
@@ -19,7 +19,6 @@ Signed-off-by: Eric Leblond <eric@regit.org>
 Acked-by: Alexei Starovoitov <ast@kernel.org>
 Signed-off-by: Alexei Starovoitov <ast@kernel.org>
 ---
- samples/bpf/Makefile   |   2 +-
  tools/lib/bpf/Build    |   2 +-
  tools/lib/bpf/bpf.c    |  11 +++
  tools/lib/bpf/nlattr.c | 187 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -28,19 +27,6 @@ Signed-off-by: Alexei Starovoitov <ast@kernel.org>
  create mode 100644 tools/lib/bpf/nlattr.c
  create mode 100644 tools/lib/bpf/nlattr.h
 
-diff --git a/samples/bpf/Makefile b/samples/bpf/Makefile
-index 64335bb94f9f..ec3fc8d88e87 100644
---- a/samples/bpf/Makefile
-+++ b/samples/bpf/Makefile
-@@ -45,7 +45,7 @@ hostprogs-y += xdp_rxq_info
- hostprogs-y += syscall_tp
- 
- # Libbpf dependencies
--LIBBPF := ../../tools/lib/bpf/bpf.o
-+LIBBPF := ../../tools/lib/bpf/bpf.o ../../tools/lib/bpf/nlattr.o
- CGROUP_HELPERS := ../../tools/testing/selftests/bpf/cgroup_helpers.o
- 
- test_lru_dist-objs := test_lru_dist.o $(LIBBPF)
 diff --git a/tools/lib/bpf/Build b/tools/lib/bpf/Build
 index d8749756352d..64c679d67109 100644
 --- a/tools/lib/bpf/Build
@@ -364,4 +350,5 @@ index 000000000000..931a71f68f93
 +#endif /* __NLATTR_H */
 -- 
 cgit 1.2.3-1.el7
+
 
