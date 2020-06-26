@@ -1,0 +1,70 @@
+From 507e590da398a0e3438d563b5e736c3f2a7749d7 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Tue, 28 Nov 2017 17:44:32 -0800
+Subject: [PATCH 42/95] tools: bpftool: unify installation directories
+
+Programs and documentation not managed by package manager are generally
+installed under /usr/local/, instead of the user's home directory. In
+particular, `man` is generally able to find manual pages under
+`/usr/local/share/man`.
+
+bpftool generally follows perf's example, and perf installs to home
+directory. However bpftool requires root credentials, so it seems
+sensible to follow the more common convention of installing files under
+/usr/local instead. So, make /usr/local the default prefix for
+installing the binary with `make install`, and the documentation with
+`make doc-install`. Also, create /usr/local/sbin if it does not exist.
+
+Note that the bash-completion file, however, is still installed under
+/usr/share/bash-completion/completions, as the default setup for bash
+does not attempt to load completion files under /usr/local/.
+
+Reported-by: David Beckett <david.beckett@netronome.com>
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Acked-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/bpf/bpftool/Documentation/Makefile | 2 +-
+ tools/bpf/bpftool/Makefile               | 5 +++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/Makefile b/tools/bpf/bpftool/Documentation/Makefile
+index bde77d7c4390..37292bb5ce60 100644
+--- a/tools/bpf/bpftool/Documentation/Makefile
++++ b/tools/bpf/bpftool/Documentation/Makefile
+@@ -6,7 +6,7 @@ RM ?= rm -f
+ 
+ # Make the path relative to DESTDIR, not prefix
+ ifndef DESTDIR
+-prefix?=$(HOME)
++prefix ?= /usr/local
+ endif
+ mandir ?= $(prefix)/share/man
+ man8dir = $(mandir)/man8
+diff --git a/tools/bpf/bpftool/Makefile b/tools/bpf/bpftool/Makefile
+index 813826c50936..c5b21f2cbca5 100644
+--- a/tools/bpf/bpftool/Makefile
++++ b/tools/bpf/bpftool/Makefile
+@@ -45,8 +45,8 @@ $(LIBBPF)-clean:
+ 	$(call QUIET_CLEAN, libbpf)
+ 	$(Q)$(MAKE) -C $(BPF_DIR) OUTPUT=$(OUTPUT) clean >/dev/null
+ 
+-prefix = /usr
+-bash_compdir ?= $(prefix)/share/bash-completion/completions
++prefix = /usr/local
++bash_compdir ?= /usr/share/bash-completion/completions
+ 
+ CC = gcc
+ 
+@@ -76,6 +76,7 @@ clean: $(LIBBPF)-clean
+ 	$(Q)rm -rf $(OUTPUT)bpftool $(OUTPUT)*.o $(OUTPUT)*.d
+ 
+ install:
++	install -m 0755 -d $(prefix)/sbin
+ 	install $(OUTPUT)bpftool $(prefix)/sbin/bpftool
+ 	install -m 0755 -d $(bash_compdir)
+ 	install -m 0644 bash-completion/bpftool $(bash_compdir)
+-- 
+cgit 1.2.3-1.el7
+
+

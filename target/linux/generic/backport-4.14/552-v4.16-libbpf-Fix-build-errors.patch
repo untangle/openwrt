@@ -1,0 +1,36 @@
+From 7d9890ef505a8c2a778d304535e26e827d58c466 Mon Sep 17 00:00:00 2001
+From: David Miller <davem@davemloft.net>
+Date: Tue, 19 Dec 2017 15:53:11 -0500
+Subject: [PATCH 53/95] libbpf: Fix build errors.
+
+These elf object pieces are of type Elf64_Xword and therefore could be
+"long long" on some builds.
+
+Cast to "long long" and use printf format %lld to deal with this since
+we are building with -Werror=format.
+
+Signed-off-by: David S. Miller <davem@davemloft.net>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/lib/bpf/libbpf.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 5b83875b3594..e9c4b7cabcf2 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -910,8 +910,9 @@ bpf_program__collect_reloc(struct bpf_program *prog, GElf_Shdr *shdr,
+ 				   GELF_R_SYM(rel.r_info));
+ 			return -LIBBPF_ERRNO__FORMAT;
+ 		}
+-		pr_debug("relo for %ld value %ld name %d\n",
+-			 rel.r_info >> 32, sym.st_value, sym.st_name);
++		pr_debug("relo for %lld value %lld name %d\n",
++			 (long long) (rel.r_info >> 32),
++			 (long long) sym.st_value, sym.st_name);
+ 
+ 		if (sym.st_shndx != maps_shndx && sym.st_shndx != text_shndx) {
+ 			pr_warning("Program '%s' contains non-map related relo data pointing to section %u\n",
+-- 
+cgit 1.2.3-1.el7
+

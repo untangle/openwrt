@@ -1,0 +1,177 @@
+From c541b73466549c4aa4ee20ccd04ba52e4c95d6eb Mon Sep 17 00:00:00 2001
+From: Prashant Bhole <bhole_prashant_q7@lab.ntt.co.jp>
+Date: Wed, 8 Nov 2017 13:55:49 +0900
+Subject: [PATCH 36/95] tools: bpftool: optionally show filenames of pinned objects
+
+Making it optional to show file names of pinned objects because
+it scans complete bpf-fs filesystem which is costly.
+Added option -f|--bpffs. Documentation updated.
+
+Signed-off-by: Prashant Bhole <bhole_prashant_q7@lab.ntt.co.jp>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-map.rst  |  5 ++++-
+ tools/bpf/bpftool/Documentation/bpftool-prog.rst |  5 ++++-
+ tools/bpf/bpftool/main.c                         | 14 +++++++++++---
+ tools/bpf/bpftool/main.h                         |  3 ++-
+ tools/bpf/bpftool/map.c                          |  3 ++-
+ tools/bpf/bpftool/prog.c                         |  3 ++-
+ 6 files changed, 25 insertions(+), 8 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-map.rst b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+index abb9ee940b15..9f51a268eb06 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-map.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-map.rst
+@@ -12,7 +12,7 @@ SYNOPSIS
+ 
+ 	**bpftool** [*OPTIONS*] **map** *COMMAND*
+ 
+-	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] }
++	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
+ 
+ 	*COMMANDS* :=
+ 	{ **show** | **dump** | **update** | **lookup** | **getnext** | **delete**
+@@ -86,6 +86,9 @@ OPTIONS
+ 	-p, --pretty
+ 		  Generate human-readable JSON output. Implies **-j**.
+ 
++	-f, --bpffs
++		  Show file names of pinned maps.
++
+ EXAMPLES
+ ========
+ **# bpftool map show**
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-prog.rst b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+index 0f25d3c39e05..36e8d1c3c40d 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-prog.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+@@ -12,7 +12,7 @@ SYNOPSIS
+ 
+ 	**bpftool** [*OPTIONS*] **prog** *COMMAND*
+ 
+-	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] }
++	*OPTIONS* := { { **-j** | **--json** } [{ **-p** | **--pretty** }] | { **-f** | **--bpffs** } }
+ 
+ 	*COMMANDS* :=
+ 	{ **show** | **dump xlated** | **dump jited** | **pin** | **help** }
+@@ -75,6 +75,9 @@ OPTIONS
+ 	-p, --pretty
+ 		  Generate human-readable JSON output. Implies **-j**.
+ 
++	-f, --bpffs
++		  Show file names of pinned programs.
++
+ EXAMPLES
+ ========
+ **# bpftool prog show**
+diff --git a/tools/bpf/bpftool/main.c b/tools/bpf/bpftool/main.c
+index 6ad53f1797fa..d6e4762170a4 100644
+--- a/tools/bpf/bpftool/main.c
++++ b/tools/bpf/bpftool/main.c
+@@ -54,6 +54,7 @@ static int (*last_do_help)(int argc, char **argv);
+ json_writer_t *json_wtr;
+ bool pretty_output;
+ bool json_output;
++bool show_pinned;
+ struct pinned_obj_table prog_table;
+ struct pinned_obj_table map_table;
+ 
+@@ -265,6 +266,7 @@ int main(int argc, char **argv)
+ 		{ "help",	no_argument,	NULL,	'h' },
+ 		{ "pretty",	no_argument,	NULL,	'p' },
+ 		{ "version",	no_argument,	NULL,	'V' },
++		{ "bpffs",	no_argument,	NULL,	'f' },
+ 		{ 0 }
+ 	};
+ 	int opt, ret;
+@@ -272,12 +274,13 @@ int main(int argc, char **argv)
+ 	last_do_help = do_help;
+ 	pretty_output = false;
+ 	json_output = false;
++	show_pinned = false;
+ 	bin_name = argv[0];
+ 
+ 	hash_init(prog_table.table);
+ 	hash_init(map_table.table);
+ 
+-	while ((opt = getopt_long(argc, argv, "Vhpj",
++	while ((opt = getopt_long(argc, argv, "Vhpjf",
+ 				  options, NULL)) >= 0) {
+ 		switch (opt) {
+ 		case 'V':
+@@ -290,6 +293,9 @@ int main(int argc, char **argv)
+ 		case 'j':
+ 			json_output = true;
+ 			break;
++		case 'f':
++			show_pinned = true;
++			break;
+ 		default:
+ 			usage();
+ 		}
+@@ -316,8 +322,10 @@ int main(int argc, char **argv)
+ 	if (json_output)
+ 		jsonw_destroy(&json_wtr);
+ 
+-	delete_pinned_obj_table(&prog_table);
+-	delete_pinned_obj_table(&map_table);
++	if (show_pinned) {
++		delete_pinned_obj_table(&prog_table);
++		delete_pinned_obj_table(&map_table);
++	}
+ 
+ 	return ret;
+ }
+diff --git a/tools/bpf/bpftool/main.h b/tools/bpf/bpftool/main.h
+index 13453de2e570..9c191e222d6f 100644
+--- a/tools/bpf/bpftool/main.h
++++ b/tools/bpf/bpftool/main.h
+@@ -59,7 +59,7 @@
+ #define HELP_SPEC_PROGRAM						\
+ 	"PROG := { id PROG_ID | pinned FILE | tag PROG_TAG }"
+ #define HELP_SPEC_OPTIONS						\
+-	"OPTIONS := { {-j|--json} [{-p|--pretty}] }"
++	"OPTIONS := { {-j|--json} [{-p|--pretty}] | {-f|--bpffs} }"
+ 
+ enum bpf_obj_type {
+ 	BPF_OBJ_UNKNOWN,
+@@ -71,6 +71,7 @@ extern const char *bin_name;
+ 
+ extern json_writer_t *json_wtr;
+ extern bool json_output;
++extern bool show_pinned;
+ extern struct pinned_obj_table prog_table;
+ extern struct pinned_obj_table map_table;
+ 
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index de0980657cef..e2450c8e88e6 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -497,7 +497,8 @@ static int do_show(int argc, char **argv)
+ 	int err;
+ 	int fd;
+ 
+-	build_pinned_obj_table(&map_table, BPF_OBJ_MAP);
++	if (show_pinned)
++		build_pinned_obj_table(&map_table, BPF_OBJ_MAP);
+ 
+ 	if (argc == 2) {
+ 		fd = map_parse_fd_and_info(&argc, &argv, &info, &len);
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 8f94b8ac2e63..f45c44ef9bec 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -382,7 +382,8 @@ static int do_show(int argc, char **argv)
+ 	int err;
+ 	int fd;
+ 
+-	build_pinned_obj_table(&prog_table, BPF_OBJ_PROG);
++	if (show_pinned)
++		build_pinned_obj_table(&prog_table, BPF_OBJ_PROG);
+ 
+ 	if (argc == 2) {
+ 		fd = prog_parse_fd(&argc, &argv);
+-- 
+cgit 1.2.3-1.el7
+
+
