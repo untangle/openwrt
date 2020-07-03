@@ -1,0 +1,52 @@
+From fe4d44b23f6b38194a92c6b8a50d921a071c4db4 Mon Sep 17 00:00:00 2001
+From: Roman Gushchin <guro@fb.com>
+Date: Wed, 13 Dec 2017 15:18:52 +0000
+Subject: [PATCH 47/95] libbpf: prefer global symbols as bpf program name source
+
+Libbpf picks the name of the first symbol in the corresponding
+elf section to use as a program name. But without taking symbol's
+scope into account it may end's up with some local label
+as a program name. E.g.:
+
+$ bpftool prog
+1: type 15  name LBB0_10    tag 0390a5136ba23f5c
+	loaded_at Dec 07/17:22  uid 0
+	xlated 456B  not jited  memlock 4096B
+
+Fix this by preferring global symbols as program name.
+
+For instance:
+$ bpftool prog
+1: type 15  name bpf_prog1  tag 0390a5136ba23f5c
+	loaded_at Dec 07/17:26  uid 0
+	xlated 456B  not jited  memlock 4096B
+
+Signed-off-by: Roman Gushchin <guro@fb.com>
+Cc: Alexei Starovoitov <ast@kernel.org>
+Cc: Daniel Borkmann <daniel@iogearbox.net>
+Cc: Jakub Kicinski <jakub.kicinski@netronome.com>
+Cc: Martin KaFai Lau <kafai@fb.com>
+Cc: Quentin Monnet <quentin.monnet@netronome.com>
+Cc: David Ahern <dsahern@gmail.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/lib/bpf/libbpf.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tools/lib/bpf/libbpf.c b/tools/lib/bpf/libbpf.c
+index 205b7822fa0a..65d0d0aff4fa 100644
+--- a/tools/lib/bpf/libbpf.c
++++ b/tools/lib/bpf/libbpf.c
+@@ -387,6 +387,8 @@ bpf_object__init_prog_names(struct bpf_object *obj)
+ 				continue;
+ 			if (sym.st_shndx != prog->idx)
+ 				continue;
++			if (GELF_ST_BIND(sym.st_info) != STB_GLOBAL)
++				continue;
+ 
+ 			name = elf_strptr(obj->efile.elf,
+ 					  obj->efile.strtabidx,
+-- 
+cgit 1.2.3-1.el7
+
+

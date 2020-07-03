@@ -1,0 +1,62 @@
+From 5d0cbf9b6c11964bf2f4041a5b0b6f81cb169736 Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@fb.com>
+Date: Mon, 2 Oct 2017 22:50:27 -0700
+Subject: [PATCH 95/95] libbpf: add support for BPF_PROG_QUERY
+
+add support for BPF_PROG_QUERY command to libbpf
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/lib/bpf/bpf.c | 20 ++++++++++++++++++++
+ tools/lib/bpf/bpf.h |  3 ++-
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/tools/lib/bpf/bpf.c b/tools/lib/bpf/bpf.c
+index d4b6ba8292ee..5128677e4117 100644
+--- a/tools/lib/bpf/bpf.c
++++ b/tools/lib/bpf/bpf.c
+@@ -303,6 +303,26 @@ int bpf_prog_detach2(int prog_fd, int target_fd, enum bpf_attach_type type)
+ 	return sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr));
+ }
+ 
++int bpf_prog_query(int target_fd, enum bpf_attach_type type, __u32 query_flags,
++		   __u32 *attach_flags, __u32 *prog_ids, __u32 *prog_cnt)
++{
++	union bpf_attr attr;
++	int ret;
++
++	bzero(&attr, sizeof(attr));
++	attr.query.target_fd	= target_fd;
++	attr.query.attach_type	= type;
++	attr.query.query_flags	= query_flags;
++	attr.query.prog_cnt	= *prog_cnt;
++	attr.query.prog_ids	= ptr_to_u64(prog_ids);
++
++	ret = sys_bpf(BPF_PROG_QUERY, &attr, sizeof(attr));
++	if (attach_flags)
++		*attach_flags = attr.query.attach_flags;
++	*prog_cnt = attr.query.prog_cnt;
++	return ret;
++}
++
+ int bpf_prog_test_run(int prog_fd, int repeat, void *data, __u32 size,
+ 		      void *data_out, __u32 *size_out, __u32 *retval,
+ 		      __u32 *duration)
+diff --git a/tools/lib/bpf/bpf.h b/tools/lib/bpf/bpf.h
+index afd64727c9cf..6534889e2b2f 100644
+--- a/tools/lib/bpf/bpf.h
++++ b/tools/lib/bpf/bpf.h
+@@ -75,5 +75,6 @@ int bpf_map_get_next_id(__u32 start_id, __u32 *next_id);
+ int bpf_prog_get_fd_by_id(__u32 id);
+ int bpf_map_get_fd_by_id(__u32 id);
+ int bpf_obj_get_info_by_fd(int prog_fd, void *info, __u32 *info_len);
+-
++int bpf_prog_query(int target_fd, enum bpf_attach_type type, __u32 query_flags,
++		   __u32 *attach_flags, __u32 *prog_ids, __u32 *prog_cnt);
+ #endif
+-- 
+cgit 1.2.3-1.el7
+
+

@@ -1,0 +1,33 @@
+From 4b6eca9d6817e58ae9b3342a5974e8fd9285279e Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Fri, 23 Mar 2018 19:45:12 -0700
+Subject: [PATCH 90/95] tools: bpftool: don't use hex numbers in JSON output
+
+JSON does not accept hex numbers with 0x prefix.  Simply print
+as decimal numbers, JSON should be primarily machine-readable.
+
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Reviewed-by: Quentin Monnet <quentin.monnet@netronome.com>
+Fixes: 831a0aafe5c3 ("tools: bpftool: add JSON output for `bpftool map *` commands")
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+---
+ tools/bpf/bpftool/map.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/bpf/bpftool/map.c b/tools/bpf/bpftool/map.c
+index f95fa67bb498..f509c86faede 100644
+--- a/tools/bpf/bpftool/map.c
++++ b/tools/bpf/bpftool/map.c
+@@ -428,7 +428,7 @@ static int show_map_close_json(int fd, struct bpf_map_info *info)
+ 		jsonw_string_field(json_wtr, "name", info->name);
+ 
+ 	jsonw_name(json_wtr, "flags");
+-	jsonw_printf(json_wtr, "%#x", info->map_flags);
++	jsonw_printf(json_wtr, "%d", info->map_flags);
+ 
+ 	print_dev_json(info->ifindex, info->netns_dev, info->netns_ino);
+ 
+-- 
+cgit 1.2.3-1.el7
+
+

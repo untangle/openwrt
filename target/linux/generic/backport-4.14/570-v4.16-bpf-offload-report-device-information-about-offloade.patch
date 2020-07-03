@@ -1,0 +1,34 @@
+From 675fc275a3a2d905535207237402c6d8dcb5fa4b Mon Sep 17 00:00:00 2001
+From: Jakub Kicinski <jakub.kicinski@netronome.com>
+Date: Wed, 27 Dec 2017 18:39:09 -0800
+Subject: [PATCH 71/95] bpf: offload: report device information for offloaded programs
+
+Report to the user ifindex and namespace information of offloaded
+programs.  If device has disappeared return -ENODEV.  Specify the
+namespace using dev/inode combination.
+
+CC: Eric W. Biederman <ebiederm@xmission.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ tools/include/uapi/linux/bpf.h |  3 +++
+ 5 files changed, 73 insertions(+)
+
+diff --git a/tools/include/uapi/linux/bpf.h b/tools/include/uapi/linux/bpf.h
+index db1b0923a308..4e8c60acfa32 100644
+--- a/tools/include/uapi/linux/bpf.h
++++ b/tools/include/uapi/linux/bpf.h
+@@ -921,6 +921,9 @@ struct bpf_prog_info {
+ 	__u32 nr_map_ids;
+ 	__aligned_u64 map_ids;
+ 	char  name[BPF_OBJ_NAME_LEN];
++	__u32 ifindex;
++	__u64 netns_dev;
++	__u64 netns_ino;
+ } __attribute__((aligned(8)));
+ 
+ struct bpf_map_info {
+-- 
+cgit 1.2.3-1.el7
+
+

@@ -1,0 +1,74 @@
+From 8dfbc6d1d213df340e5dcfdcdc76ad9407a29273 Mon Sep 17 00:00:00 2001
+From: Quentin Monnet <quentin.monnet@netronome.com>
+Date: Thu, 19 Oct 2017 15:46:25 -0700
+Subject: [PATCH 14/95] tools: bpftool: show that `opcodes` or `file FILE` should be
+ exclusive
+
+For the `bpftool prog dump { jited | xlated } ...` command, adding
+`opcodes` keyword (to request opcodes to be printed) will have no effect
+if `file FILE` (to write binary output to FILE) is provided.
+
+The manual page and the help message to be displayed in the terminal
+should reflect that, and indicate that these options should be mutually
+exclusive.
+
+Signed-off-by: Quentin Monnet <quentin.monnet@netronome.com>
+Signed-off-by: Jakub Kicinski <jakub.kicinski@netronome.com>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ tools/bpf/bpftool/Documentation/bpftool-prog.rst | 8 ++++----
+ tools/bpf/bpftool/prog.c                         | 4 ++--
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/tools/bpf/bpftool/Documentation/bpftool-prog.rst b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+index 3968f0bd37db..69b3770370c8 100644
+--- a/tools/bpf/bpftool/Documentation/bpftool-prog.rst
++++ b/tools/bpf/bpftool/Documentation/bpftool-prog.rst
+@@ -11,8 +11,8 @@ SYNOPSIS
+ ========
+ 
+ |	**bpftool** prog show [*PROG*]
+-|	**bpftool** prog dump xlated *PROG* [file *FILE*] [opcodes]
+-|	**bpftool** prog dump jited  *PROG* [file *FILE*] [opcodes]
++|	**bpftool** prog dump xlated *PROG* [{file *FILE* | opcodes }]
++|	**bpftool** prog dump jited  *PROG* [{file *FILE* | opcodes }]
+ |	**bpftool** prog pin *PROG* *FILE*
+ |	**bpftool** prog help
+ |
+@@ -28,14 +28,14 @@ DESCRIPTION
+ 		  Output will start with program ID followed by program type and
+ 		  zero or more named attributes (depending on kernel version).
+ 
+-	**bpftool prog dump xlated** *PROG* [**file** *FILE*] [**opcodes**]
++	**bpftool prog dump xlated** *PROG* [{ **file** *FILE* | **opcodes** }]
+ 		  Dump eBPF instructions of the program from the kernel.
+ 		  If *FILE* is specified image will be written to a file,
+ 		  otherwise it will be disassembled and printed to stdout.
+ 
+ 		  **opcodes** controls if raw opcodes will be printed.
+ 
+-	**bpftool prog dump jited**  *PROG* [**file** *FILE*] [**opcodes**]
++	**bpftool prog dump jited**  *PROG* [{ **file** *FILE* | **opcodes** }]
+ 		  Dump jited image (host machine code) of the program.
+ 		  If *FILE* is specified image will be written to a file,
+ 		  otherwise it will be disassembled and printed to stdout.
+diff --git a/tools/bpf/bpftool/prog.c b/tools/bpf/bpftool/prog.c
+index 57edbea2fbe8..7838206a455b 100644
+--- a/tools/bpf/bpftool/prog.c
++++ b/tools/bpf/bpftool/prog.c
+@@ -469,8 +469,8 @@ static int do_help(int argc, char **argv)
+ {
+ 	fprintf(stderr,
+ 		"Usage: %s %s show [PROG]\n"
+-		"       %s %s dump xlated PROG [file FILE] [opcodes]\n"
+-		"       %s %s dump jited  PROG [file FILE] [opcodes]\n"
++		"       %s %s dump xlated PROG [{ file FILE | opcodes }]\n"
++		"       %s %s dump jited  PROG [{ file FILE | opcodes }]\n"
+ 		"       %s %s pin   PROG FILE\n"
+ 		"       %s %s help\n"
+ 		"\n"
+-- 
+cgit 1.2.3-1.el7
+
+

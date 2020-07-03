@@ -1,0 +1,100 @@
+From cc8b0b92a1699bc32f7fec71daa2bfc90de43a4d Mon Sep 17 00:00:00 2001
+From: Alexei Starovoitov <ast@fb.com>
+Date: Thu, 14 Dec 2017 17:55:05 -0800
+Subject: [PATCH 50/95] bpf: introduce function calls (function boundaries)
+
+Allow arbitrary function calls from bpf function to another bpf function.
+
+Since the beginning of bpf all bpf programs were represented as a single function
+and program authors were forced to use always_inline for all functions
+in their C code. That was causing llvm to unnecessary inflate the code size
+and forcing developers to move code to header files with little code reuse.
+
+With a bit of additional complexity teach verifier to recognize
+arbitrary function calls from one bpf function to another as long as
+all of functions are presented to the verifier as a single bpf program.
+New program layout:
+r6 = r1    // some code
+..
+r1 = ..    // arg1
+r2 = ..    // arg2
+call pc+1  // function call pc-relative
+exit
+.. = r1    // access arg1
+.. = r2    // access arg2
+..
+call pc+20 // second level of function call
+...
+
+It allows for better optimized code and finally allows to introduce
+the core bpf libraries that can be reused in different projects,
+since programs are no longer limited by single elf file.
+With function calls bpf can be compiled into multiple .o files.
+
+This patch is the first step. It detects programs that contain
+multiple functions and checks that calls between them are valid.
+It splits the sequence of bpf instructions (one program) into a set
+of bpf functions that call each other. Calls to only known
+functions are allowed. In the future the verifier may allow
+calls to unresolved functions and will do dynamic linking.
+This logic supports statically linked bpf functions only.
+
+Such function boundary detection could have been done as part of
+control flow graph building in check_cfg(), but it's cleaner to
+separate function boundary detection vs control flow checks within
+a subprogram (function) into logically indepedent steps.
+Follow up patches may split check_cfg() further, but not check_subprogs().
+
+Only allow bpf-to-bpf calls for root only and for non-hw-offloaded programs.
+These restrictions can be relaxed in the future.
+
+Signed-off-by: Alexei Starovoitov <ast@kernel.org>
+Acked-by: Daniel Borkmann <daniel@iogearbox.net>
+Signed-off-by: Daniel Borkmann <daniel@iogearbox.net>
+---
+ include/uapi/linux/bpf.h     |   6 ++
+ kernel/bpf/disasm.c          |   8 ++-
+ 4 files changed, 155 insertions(+), 5 deletions(-)
+
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index 595bda120cfb..d01f1cb3cfc0 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -197,8 +197,14 @@ enum bpf_attach_type {
+  */
+ #define BPF_F_STRICT_ALIGNMENT	(1U << 0)
+ 
++/* when bpf_ldimm64->src_reg == BPF_PSEUDO_MAP_FD, bpf_ldimm64->imm == fd */
+ #define BPF_PSEUDO_MAP_FD	1
+ 
++/* when bpf_call->src_reg == BPF_PSEUDO_CALL, bpf_call->imm == pc-relative
++ * offset to another bpf function
++ */
++#define BPF_PSEUDO_CALL		1
++
+ /* flags for BPF_MAP_UPDATE_ELEM command */
+ #define BPF_ANY		0 /* create new element or update existing */
+ #define BPF_NOEXIST	1 /* create new element if it didn't exist */
+diff --git a/kernel/bpf/disasm.c b/kernel/bpf/disasm.c
+index e682850c9715..883f88fa5bfc 100644
+--- a/kernel/bpf/disasm.c
++++ b/kernel/bpf/disasm.c
+@@ -189,8 +189,12 @@ void print_bpf_insn(bpf_insn_print_cb verbose, struct bpf_verifier_env *env,
+ 		u8 opcode = BPF_OP(insn->code);
+ 
+ 		if (opcode == BPF_CALL) {
+-			verbose(env, "(%02x) call %s#%d\n", insn->code,
+-				func_id_name(insn->imm), insn->imm);
++			if (insn->src_reg == BPF_PSEUDO_CALL)
++				verbose(env, "(%02x) call pc%+d\n", insn->code,
++					insn->imm);
++			else
++				verbose(env, "(%02x) call %s#%d\n", insn->code,
++					func_id_name(insn->imm), insn->imm);
+ 		} else if (insn->code == (BPF_JMP | BPF_JA)) {
+ 			verbose(env, "(%02x) goto pc%+d\n",
+ 				insn->code, insn->off);
+-- 
+cgit 1.2.3-1.el7
+
+
