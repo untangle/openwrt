@@ -18,7 +18,7 @@ index 26901ec87361..d8c8302a480e 100644
 -LIBS = -lelf -lbfd -lopcodes $(LIBBPF)
 +
 +#MUSL libs for openwrt
-+ifeq ($(CC), x86_64-openwrt-linux-musl-gcc)
++ifneq (,$(findstring openwrt,$(CC)))
 +	LIBS += -lfts -lpthread
 +endif
 +LIBS += -lelf -lbfd -lopcodes $(LIBBPF) $(LDFLAGS)
