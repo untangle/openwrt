@@ -1,0 +1,26 @@
+From 286e8457b32487c261d37ca81db7f1722a1d7b1f Mon Sep 17 00:00:00 2001
+From: Tiffany Kalin <tkalin@untangle.com>
+Date: Mon, 6 Jul 2020 11:44:10 -0600
+Subject: [PATCH] Add in an additional arch-related include to libbpf
+ compilation
+
+---
+ tools/lib/bpf/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/lib/bpf/Makefile b/tools/lib/bpf/Makefile
+index e6d5f8d1477f..48c7078e495e 100644
+--- a/tools/lib/bpf/Makefile
++++ b/tools/lib/bpf/Makefile
+@@ -69,7 +69,7 @@ FEATURE_USER = .libbpf
+ FEATURE_TESTS = libelf libelf-getphdrnum libelf-mmap bpf
+ FEATURE_DISPLAY = libelf bpf
+ 
+-INCLUDES = -I. -I$(srctree)/tools/include -I$(srctree)/tools/arch/$(ARCH)/include/uapi -I$(srctree)/tools/include/uapi
++INCLUDES = -I. -I$(srctree)/tools/include -I$(srctree)/tools/arch/$(ARCH)/include/uapi -I$(srctree)/tools/include/uapi -I$(srctree)/tools/arch/$(ARCH)/include
+ FEATURE_CHECK_CFLAGS-bpf = $(INCLUDES)
+ 
+ check_feat := 1
+-- 
+2.20.1
+
