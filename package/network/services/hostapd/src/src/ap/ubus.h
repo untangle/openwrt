@@ -128,6 +128,13 @@ static inline void hostapd_ubus_notify_bss_transition_response(
 {
 }
 
+static inline void hostapd_ubus_notify_bss_transition_response(
+	struct hostapd_data *hapd, const u8 *addr, u8 dialog_token, u8 status_code,
+	u8 bss_termination_delay, const u8 *target_bssid,
+	const u8 *candidate_list, u16 candidate_list_len)
+{
+}
+
 static inline void hostapd_ubus_add(struct hapd_interfaces *interfaces)
 {
 }
