@@ -55,7 +55,7 @@ pipeline {
 
 		    if (! (env.BRANCH_NAME =~ /^(master|MFW|release-\d)/)) {
                        // force master
-                       feedsBranch = 'master'
+                       def feedsBranch = 'master'
                     }
                     buildMFW(myDevice, libc, startClean, makeOptions, feedsBranch, toolsDir)
 
