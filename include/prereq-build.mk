@@ -226,6 +226,9 @@ ifeq ($(HOST_OS),Linux)
 	Missing libintl.h Please install the musl-libintl package if musl libc))
 endif
 
+$(eval $(call SetupHostCommand,which,Please install 'which', \
+	which which | grep which))
+
 $(STAGING_DIR_HOST)/bin/mkhash: $(SCRIPT_DIR)/mkhash.c
 	mkdir -p $(dir $@)
 	$(CC) -O2 -I$(TOPDIR)/tools/include -o $@ $<
