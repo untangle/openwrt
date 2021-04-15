@@ -31,7 +31,7 @@ pipeline {
     choice(name:'libc', choices:['musl', 'glibc'], description:'libc to link against')
     string(name:'feedsBranch', defaultValue:env.BRANCH_NAME, description:'feeds branch to use')
     choice(name:'startClean', choices:['false', 'true'], description:'start clean or not')
-    string(name:'makeOptions', defaultValue:'-j32', description:'options passed directly to make')
+    string(name:'makeOptions', defaultValue:'-j32 V=s', description:'options passed directly to make')
   }
 
   stages {
