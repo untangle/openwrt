@@ -106,6 +106,10 @@ pipeline {
           stages {
             stage('Prep x86_64') {
               steps {
+                dir(toolsDir) { 
+                  git url:"git@github.com:untangle/mfw_build", branch:"${env.BRANCH_NAME}", credentialsId: 'buildbot'
+                }
+
                 unstash(name:"rootfs-${device}")
                 sh("test -f ${rootfsTarballPath}")
 		sh("mv -f ${rootfsTarballPath} ${toolsDir}")
