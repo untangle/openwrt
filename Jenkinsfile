@@ -110,6 +110,10 @@ pipeline {
 
             stage('TCP services') {
               steps {
+                dir(toolsDir) { 
+                  git url:"git@github.com:untangle/mfw_build", branch:"${env.BRANCH_NAME}", credentialsId: 'buildbot'
+                }
+
                 dir('mfw') {
                   script {
                     try {
