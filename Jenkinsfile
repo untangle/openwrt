@@ -1,6 +1,5 @@
 def devices = ['x86_64',
                'wrt3200',
-               'wrt1900',
                'wrt32x',
                'espressobin']
 
