@@ -47,10 +47,11 @@ pipeline {
                   def toolsDir = "${env.HOME}/tools-mfw-${env.BRANCH_NAME}-${myDevice}"
                   def artifactsDir = "tmp/artifacts"
 
-		  if (env.BRANCH_NAME =~ /^(master|MFW|release-\d)/) {
-		     branch = "${buildBranch}"
-		  } else { // force master
+		  if (env.BRANCH_NAME =~ /^mfw\+owrt/) {
+                     // force master
 		     branch = 'master'
+		  } else {
+		     branch = "${buildBranch}"
                   }
 
 		  dir(toolsDir) { 
