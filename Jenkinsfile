@@ -22,6 +22,11 @@ void archiveMFW(String device, String toolsDir, String artifactsDir) {
 pipeline {
   agent none
 
+  options {
+    disableConcurrentBuilds()
+    quietPeriod(60)
+  }
+
   triggers {
     upstream(upstreamProjects:"packetd/${env.BRANCH_NAME}, reportd/${env.BRANCH_NAME}, restd/${env.BRANCH_NAME}, sync-settings/${env.BRANCH_NAME}, classd/${env.BRANCH_NAME}, bctid/${env.BRANCH_NAME}, feeds/${env.BRANCH_NAME}, admin/${env.BRANCH_NAME}, mfw_ui/${env.BRANCH_NAME}, mfw_build/${env.BRANCH_NAME}, bpfgen/${env.BRANCH_NAME}, client-license-service/${env.BRANCH_NAME}",
              threshold: hudson.model.Result.SUCCESS)
