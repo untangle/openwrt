@@ -349,6 +349,12 @@ This module adds support for Qualcomm Technologies 802.11ax family of
 chipsets with PCI bus.
 endef
 
+define KernelPackage/ath10k-smallbuffers
+  $(call KernelPackage/ath10k)
+  TITLE+= (small buffers for low-RAM devices)
+  VARIANT:=smallbuffers
+endef
+
 define KernelPackage/carl9170
   $(call KernelPackage/mac80211/Default)
   TITLE:=Driver for Atheros AR9170 USB sticks
