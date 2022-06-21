@@ -3,20 +3,23 @@ def devices = ['x86_64',
                'wrt32x',
                'espressobin']
 
+def regions = ['us',
+               'eu']
+
 def jobs = [:] // dynamically populated later on
 
 def credentialsId = 'buildbot'
 
-void buildMFW(String device, String libc, String startClean, String makeOptions, String buildBranch, String toolsDir, String credentialsId) {
+void buildMFW(String device, String libc, String region, String startClean, String makeOptions, String buildBranch, String toolsDir, String credentialsId) {
   sshagent (credentials:[credentialsId]) {
     sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device} pull"
-    sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device} run build -d ${device} -l ${libc} -c ${startClean} -m '${makeOptions}' -v ${buildBranch}"
+    sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device} run build -d ${device} -l ${libc} -r ${region} -c ${startClean} -m '${makeOptions}' -v ${buildBranch}"
   }
 }
 
-void archiveMFW(String device, String toolsDir, String artifactsDir) {
+void archiveMFW(String device, String region, String toolsDir, String artifactsDir) {
   sh "rm -fr ${artifactsDir}"
-  sh "${toolsDir}/version-images.sh -d ${device} -o ${artifactsDir} -c -t \$(cat tmp/version.date)"
+  sh "${toolsDir}/version-images.sh -d ${device} -r ${region} -o ${artifactsDir} -c -t \$(cat tmp/version.date)"
 }
 
 pipeline {
@@ -45,38 +48,48 @@ pipeline {
         script {
 	  for (device in devices) {
 	    def myDevice = "${device}" // FIXME: cmon now
-	    jobs[myDevice] = {
-	      node('mfw') {
-		stage(myDevice) {
-		  def buildDir = "${env.HOME}/build-mfw-${env.BRANCH_NAME}-${myDevice}"
-                  def toolsDir = "${env.HOME}/tools-mfw-${env.BRANCH_NAME}-${myDevice}"
-                  def artifactsDir = "tmp/artifacts"
+            for (region in regions) {
+              def myRegion = "${region}" // FIXME: cmon now
+	      def jobName = "${myDevice}_${myRegion}"
+	      jobs[jobName] = {
+		node('mfw') {
+		  stage(jobName) {
+		    def artifactsDir = "tmp/artifacts"
 
-		  if (env.BRANCH_NAME =~ /^mfw\+owrt/) {
-                     // force master
-		     branch = 'master'
-		  } else {
-		     branch = "${buildBranch}"
-                  }
+		    // default values for US build
+		    def buildDir = "${env.HOME}/build-mfw-${env.BRANCH_NAME}-${myDevice}"
+		    def toolsDir = "${env.HOME}/tools-mfw-${env.BRANCH_NAME}-${myDevice}"
 
-		  dir(toolsDir) { 
-                    git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
-                  }
-		  dir(buildDir) {
-                    checkout scm
+                    if (region != 'us') {
+		      buildDir = buildDir + "-" + myRegion
+		      toolsDir = toolsDir + "-" + myRegion
 
-                    buildMFW(myDevice, libc, startClean, makeOptions, branch, toolsDir, credentialsId)
+		    if (env.BRANCH_NAME =~ /^mfw\+owrt/) {
+		       // force master
+		       branch = 'master'
+		    } else {
+		       branch = "${buildBranch}"
+		    }
 
-		    if (myDevice == 'x86_64') {
-                      stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
-                    }
+		    dir(toolsDir) { 
+		      git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+		    }
+		    dir(buildDir) {
+		      checkout scm
 
-                    archiveMFW(myDevice, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
-                  }
-		  archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
+		      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, branch, toolsDir, credentialsId)
+
+		      if (myDevice == 'x86_64' && myRegion == 'us') {
+			stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
+		      }
+
+		      archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
+		    }
+		    archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
+		  }
 		}
-              }
-	    }
+	      }
+            }
 	  }
 
           parallel jobs
