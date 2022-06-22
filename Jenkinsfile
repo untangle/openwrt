@@ -60,7 +60,7 @@ pipeline {
 		    def buildDir = "${env.HOME}/build-mfw-${env.BRANCH_NAME}-${myDevice}"
 		    def toolsDir = "${env.HOME}/tools-mfw-${env.BRANCH_NAME}-${myDevice}"
 
-                    if (region != 'us') {
+                    if (myRegion != 'us') {
 		      buildDir = buildDir + "-" + myRegion
 		      toolsDir = toolsDir + "-" + myRegion
 		    }
