@@ -63,6 +63,7 @@ pipeline {
                     if (region != 'us') {
 		      buildDir = buildDir + "-" + myRegion
 		      toolsDir = toolsDir + "-" + myRegion
+		    }
 
 		    if (env.BRANCH_NAME =~ /^mfw\+owrt/) {
 		       // force master
