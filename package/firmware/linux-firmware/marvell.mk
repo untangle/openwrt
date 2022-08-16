@@ -11,11 +11,12 @@ define Package/mwl8k-firmware/install
 endef
 $(eval $(call BuildPackage,mwl8k-firmware))
 
-Package/mwifiex-pcie-firmware = $(call Package/firmware-default,Marvell 8897 firmware)
+Package/mwifiex-pcie-firmware = $(call Package/firmware-default,Marvell 8897/8997 firmware)
 define Package/mwifiex-pcie-firmware/install
 	$(INSTALL_DIR) $(1)/lib/firmware/mrvl
 	$(INSTALL_DATA) \
 		$(PKG_BUILD_DIR)/mrvl/pcie8897_uapsta.bin \
+		$(PKG_BUILD_DIR)/mrvl/pcieusb8997_combo_v4.bin \
 		$(1)/lib/firmware/mrvl/
 endef
 $(eval $(call BuildPackage,mwifiex-pcie-firmware))
