@@ -339,6 +339,8 @@ define Build/qemu-image
 endef
 
 # Convert a raw image into an ESXi $1 type image.
+# NOTE: We build the image with the .vmdk extension which confuses what qemu-img creates.
+# Rename our generated image to .image before running qemu-image.
 # E.g. | qemu-image-esxi vdi
 define Build/qemu-image-esxi
 	if command -v qemu-img; then \
