@@ -342,7 +342,8 @@ endef
 # E.g. | qemu-image-esxi vdi
 define Build/qemu-image-esxi
 	if command -v qemu-img; then \
-		qemu-img convert -f raw -o adapter_type=lsilogic,subformat=monolithicFlat -O $1 $@ $@; \
+		mv $@ $@.image; \
+		qemu-img convert -f raw -o adapter_type=lsilogic,subformat=monolithicFlat -O $1 $@.image $@; \
 	else \
 		echo "WARNING: Install qemu-img to create VDI/VMDK images" >&2; exit 1; \
 	fi
