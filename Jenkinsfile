@@ -77,10 +77,10 @@ pipeline {
 		    dir(buildDir) {
 		      checkout scm
       
-        def dpdkArgs = ""
-        if (withDPDK == 'true' {
-            dpdkArgs = "--with-dpdk"
-	      }
+          def dpdkArgs = ""
+          if (withDPDK == 'true' {
+              dpdkArgs = "--with-dpdk"
+	        }
 
 		      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkArgs, branch, toolsDir, credentialsId)
 
