@@ -78,7 +78,7 @@ pipeline {
 		      checkout scm
       
           def dpdkArgs = ""
-          if (withDPDK == 'true' {
+          if (withDPDK == 'true') {
               dpdkArgs = "--with-dpdk"
 	        }
 
