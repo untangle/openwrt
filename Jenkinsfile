@@ -8,10 +8,14 @@ def jobs = [:] // dynamically populated later on
 
 def credentialsId = 'buildbot'
 
-void buildMFW(String device, String libc, String region, String startClean, String makeOptions, String buildBranch, String toolsDir, String credentialsId) {
+void buildMFW(String device, String libc, String region, String startClean, String makeOptions, String withDPDK, String buildBranch, String toolsDir, String credentialsId) {
+  def dpdkArgs = ""
+  if (withDPDK == 'true' {
+           dpdkArgs = "--with-dpdk"
+	}
   sshagent (credentials:[credentialsId]) {
     sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device}_${region} pull"
-    sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device}_${region} run build -d ${device} -l ${libc} -r ${region} -c ${startClean} -m '${makeOptions}' -v ${buildBranch}"
+    sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device}_${region} run build ${dpdkArgs} -d ${device} -l ${libc} -r ${region} -c ${startClean} -m '${makeOptions}' -v ${buildBranch}"
   }
 }
 
@@ -38,6 +42,7 @@ pipeline {
     string(name:'buildBranch', defaultValue:env.BRANCH_NAME, description:'branch to use for feeds.git and mfw_build.git')
     choice(name:'startClean', choices:['false', 'true'], description:'start clean')
     string(name:'makeOptions', defaultValue:'-j32', description:'options passed directly to make')
+    choice(name:'withDPDK', choices:['false', 'true'], description:'Include DPDK. (glibc only)')
   }
 
   stages {
@@ -76,7 +81,7 @@ pipeline {
 		    dir(buildDir) {
 		      checkout scm
 
-		      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, branch, toolsDir, credentialsId)
+		      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, withDPDK, branch, toolsDir, credentialsId)
 
 		      if (myDevice == 'x86_64' && myRegion == 'us') {
 			stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
