@@ -1,8 +1,6 @@
-def devices = ['x86_64',
-               'espressobin']
+def devices = ['x86_64']
 
-def regions = ['us',
-               'eu']
+def regions = ['us']
 
 def jobs = [:] // dynamically populated later on
 
