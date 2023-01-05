@@ -111,7 +111,7 @@ define Device/Default
   IMAGE/combined.vmdk := grub-config pc | combined | grub-install | qemu-image vmdk
   IMAGE/combined.vhdx := grub-config pc | combined | grub-install | qemu-image vhdx -o subformat=dynamic
   IMAGE/combined-esxi.vmdk := grub-config pc | combined | grub-install | qemu-image-esxi vmdk
-  IMAGE/combined-esxi-flat.vmdk := wait 300
+  IMAGE/combined-esxi-flat.vmdk := wait 900
   IMAGE/rootfs.img := append-rootfs | pad-to $(ROOTFS_PARTSIZE)
   IMAGE/rootfs.img.gz := append-rootfs | pad-to $(ROOTFS_PARTSIZE) | gzip
   ARTIFACT/image-efi.iso := grub-config iso | iso efi
@@ -121,7 +121,7 @@ define Device/Default
   IMAGE/combined-efi.vmdk := grub-config efi | combined efi | grub-install efi | qemu-image vmdk
   IMAGE/combined-efi.vhdx := grub-config efi | combined efi | grub-install efi | qemu-image vhdx -o subformat=dynamic
   IMAGE/combined-efi-esxi.vmdk := grub-config efi | combined efi | grub-install efi | qemu-image-esxi vmdk
-  IMAGE/combined-efi-esxi-flat.vmdk := wait 300
+  IMAGE/combined-efi-esxi-flat.vmdk := wait 900
   ifeq ($(CONFIG_TARGET_IMAGES_GZIP),y)
     IMAGES-y := rootfs.img.gz
     IMAGES-$$(CONFIG_GRUB_IMAGES) += combined.img.gz
