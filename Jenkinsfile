@@ -1,6 +1,6 @@
-def devices = ['x86_64']
+def devices = ['x86_64', 'espressobin']
 
-def regions = ['us']
+def regions = ['us', 'eu']
 
 def jobs = [:] // dynamically populated later on
 
@@ -47,50 +47,51 @@ pipeline {
 	    def myDevice = "${device}" // FIXME: cmon now
             for (region in regions) {
               def myRegion = "${region}" // FIXME: cmon now
-	      def jobName = "${myDevice}_${myRegion}"
-	      jobs[jobName] = {
-		node('mfw') {
-		  stage(jobName) {
-		    def artifactsDir = "tmp/artifacts"
+	            def jobName = "${myDevice}_${myRegion}"
+	            jobs[jobName] = {
+                node('mfw') {
+                  stage(jobName) {
+                    def artifactsDir = "tmp/artifacts"
 
-		    // default values for US build
-		    def buildDir = "${env.HOME}/build-mfw-${buildBranch}-${myDevice}"
-		    def toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${myDevice}"
+                    // default values for US build
+                    def buildDir = "${env.HOME}/build-mfw-${buildBranch}-${myDevice}"
+                    def toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${myDevice}"
 
                     if (myRegion != 'us') {
-		      buildDir = buildDir + "-" + myRegion
-		      toolsDir = toolsDir + "-" + myRegion
-		    }
+                      buildDir = buildDir + "-" + myRegion
+                      toolsDir = toolsDir + "-" + myRegion
+                    }
 
-		    if (buildBranch =~ /^mfw\+owrt/) {
-		       // force master
-		       branch = 'master'
-		    } else {
-		       branch = buildBranch
-		    }
+                    if (buildBranch =~ /^mfw\+owrt/) {
+                      // force master
+                      branch = 'master'
+                    } else {
+                      branch = buildBranch
+                    }
 
-		    dir(toolsDir) {
-		      git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
-		    }
-		    dir(buildDir) {
-		      checkout scm
-      
-          def dpdkArgs = ""
-          if (withDPDK == 'true') {
-              dpdkArgs = "--with-dpdk"
-	        }
+                    dir(toolsDir) {
+                      git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+                    }
+                    dir(buildDir) {
+                      checkout scm
+                  
+                      def dpdkArgs = ""
+                      if (withDPDK == 'true') {
+                          dpdkArgs = "--with-dpdk"
+                          libc = "glibc"
+                      }
 
-		      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkArgs, branch, toolsDir, credentialsId)
+                      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkArgs, branch, toolsDir, credentialsId)
 
-		      if (myDevice == 'x86_64' && myRegion == 'us') {
-			stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
-		      }
+                      if (myDevice == 'x86_64' && myRegion == 'us') {
+                  stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
+                      }
 
-		      archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
-		    }
-		    archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
-		  }
-		}
+                      archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
+                    }
+                    archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
+                  }
+                }
 	      }
             }
 	  }
