@@ -1,4 +1,5 @@
-def devices = ['x86_64', 'espressobin']
+def devices = ['x86_64',
+                'espressobin']
 
 def regions = ['us', 'eu']
 
@@ -6,10 +7,10 @@ def jobs = [:] // dynamically populated later on
 
 def credentialsId = 'buildbot'
 
-void buildMFW(String device, String libc, String region, String startClean, String makeOptions, String dpdkArgs, String buildBranch, String toolsDir, String credentialsId) {
+void buildMFW(String device, String libc, String region, String startClean, String makeOptions, String dpdkFlag, String buildBranch, String toolsDir, String credentialsId) {
   sshagent (credentials:[credentialsId]) {
     sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device}_${region} build --no-cache"
-    sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device}_${region} run build-local-container ${dpdkArgs} -d ${device} -l ${libc} -r ${region} -c ${startClean} -m '${makeOptions}' -v ${buildBranch}"
+    sh "docker-compose -f ${toolsDir}/docker-compose.build.yml -p mfw_${device}_${region} run build-local-container ${dpdkFlag} -d ${device} -l ${libc} -r ${region} -c ${startClean} -m '${makeOptions}' -v ${buildBranch}"
   }
 }
 
@@ -44,6 +45,10 @@ pipeline {
       steps {
         script {
 	  for (device in devices) {
+      // DPDK will not build on expressobin 
+      if (withDPDK == 'true' && device == 'expressobin') {
+        continue
+      }
 	    def myDevice = "${device}" // FIXME: cmon now
             for (region in regions) {
               def myRegion = "${region}" // FIXME: cmon now
@@ -75,13 +80,13 @@ pipeline {
                     dir(buildDir) {
                       checkout scm
                   
-                      def dpdkArgs = ""
+                      def dpdkFlag = ""
                       if (withDPDK == 'true') {
-                          dpdkArgs = "--with-dpdk"
+                          dpdkFlag = "--with-dpdk"
                           libc = "glibc"
                       }
 
-                      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkArgs, branch, toolsDir, credentialsId)
+                      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
 
                       if (myDevice == 'x86_64' && myRegion == 'us') {
                   stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
