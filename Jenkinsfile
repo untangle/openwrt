@@ -46,7 +46,7 @@ pipeline {
         script {
 	  for (device in devices) {
       // DPDK will not build on expressobin 
-      if (withDPDK == 'true' && device == 'expressobin') {
+      if (withDPDK == 'true' && device == 'espressobin') {
         continue
       }
 	    def myDevice = "${device}" // FIXME: cmon now
