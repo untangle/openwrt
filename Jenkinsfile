@@ -54,7 +54,8 @@ pipeline {
                   stage(jobName) {
                     // DPDK will not build on expressobin as it requires libmusl
                     if (withDPDK == 'true' && device == 'espressobin') {
-                      continue
+                      currentBuild.result = 'SUCCESS'
+                      return
                     }
                     def artifactsDir = "tmp/artifacts"
 
