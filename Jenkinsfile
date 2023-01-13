@@ -52,10 +52,10 @@ pipeline {
 	            jobs[jobName] = {
                 node('mfw') {
                   stage(jobName) {
-                    // DPDK will not build on expressobin as it requires libmusl
-                    if (withDPDK == 'true' && device == 'espressobin') {
-                      currentBuild.result = 'SUCCESS'
-                      return
+                    when{
+                      expression{
+                        !(device == 'espressobin' && withDPDK == 'true')
+                      }
                     }
                     def artifactsDir = "tmp/artifacts"
 
