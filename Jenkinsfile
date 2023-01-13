@@ -49,7 +49,7 @@ pipeline {
             for (region in regions) {
               def myRegion = "${region}" // FIXME: cmon now
 	            def jobName = "${myDevice}_${myRegion}"
-              if (withDPD == 'true' && device == 'espressobin') {
+              if (withDPDK == 'true' && device == 'espressobin') {
                 jobs[jobName] = {
                   node('mfw') {
                     state(jobName) {
