@@ -45,10 +45,6 @@ pipeline {
       steps {
         script {
 	  for (device in devices) {
-      // DPDK will not build on expressobin 
-      if (withDPDK == 'true' && device == 'espressobin') {
-        continue
-      }
 	    def myDevice = "${device}" // FIXME: cmon now
             for (region in regions) {
               def myRegion = "${region}" // FIXME: cmon now
@@ -56,6 +52,10 @@ pipeline {
 	            jobs[jobName] = {
                 node('mfw') {
                   stage(jobName) {
+                    // DPDK will not build on expressobin as it requires libmusl
+                    if (withDPDK == 'true' && device == 'espressobin') {
+                      continue
+                    }
                     def artifactsDir = "tmp/artifacts"
 
                     // default values for US build
