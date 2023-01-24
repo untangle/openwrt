@@ -138,41 +138,41 @@ pipeline {
           }
 
           stages {
-            stage('Prep x86_64') {
-              when {
-                expression { withDPDK == 'false' }
-              steps {
-                script {
-		  if (buildBranch =~ /^mfw\+owrt/) {
-		     // force master
-		     branch = 'master'
-		  } else {
-		     branch = buildBranch
-		  }
+            if (withDPDK == false) {
+              stage('Prep x86_64') {
+                steps {
+                  script {
+        if (buildBranch =~ /^mfw\+owrt/) {
+          // force master
+          branch = 'master'
+        } else {
+          branch = buildBranch
+        }
 
-		  dir(toolsDir) {
-		    git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
-		  }
+        dir(toolsDir) {
+          git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+        }
 
-		  unstash(name:"rootfs-${device}")
-		  sh("test -f ${rootfsTarballPath}")
-		  sh("mv -f ${rootfsTarballPath} ${toolsDir}")
+        unstash(name:"rootfs-${device}")
+        sh("test -f ${rootfsTarballPath}")
+        sh("mv -f ${rootfsTarballPath} ${toolsDir}")
+                  }
                 }
               }
             }
 
-            stage('TCP services') {
-              when {
-                expression { withDPDK == 'false' }
-              steps {
-                dir('mfw') {
-                  script {
-                    try {
-                      sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
-                      sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
-                    } catch (exc) {
-                      currentBuild.result = 'UNSTABLE'
-                      unstable('TCP services test failed')
+            if (withDPDK == false) {
+              stage('TCP services') {
+                steps {
+                  dir('mfw') {
+                    script {
+                      try {
+                        sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
+                        sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
+                      } catch (exc) {
+                        currentBuild.result = 'UNSTABLE'
+                        unstable('TCP services test failed')
+                      }
                     }
                   }
                 }
