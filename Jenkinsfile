@@ -50,10 +50,11 @@ pipeline {
               def myRegion = "${region}" // FIXME: cmon now
 	            def jobName = "${myDevice}_${myRegion}"
               if (withDPDK == 'true' && device == 'espressobin') {
+                // create a fake empty job to preserve coloumns in jenkins view.
                 jobs[jobName] = {
                   node('mfw') {
                     state(jobName) {
-                      return
+                      return 0
                     }
                   }
                 }
@@ -138,6 +139,8 @@ pipeline {
 
           stages {
             stage('Prep x86_64') {
+              when {
+                expression { withDPDK == 'false' }
               steps {
                 script {
 		  if (buildBranch =~ /^mfw\+owrt/) {
@@ -159,6 +162,8 @@ pipeline {
             }
 
             stage('TCP services') {
+              when {
+                expression { withDPDK == 'false' }
               steps {
                 dir('mfw') {
                   script {
