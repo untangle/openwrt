@@ -138,41 +138,47 @@ pipeline {
           }
 
           stages {
-            if (withDPDK == false) {
-              stage('Prep x86_64') {
-                steps {
-                  script {
-        if (buildBranch =~ /^mfw\+owrt/) {
-          // force master
-          branch = 'master'
-        } else {
-          branch = buildBranch
-        }
 
-        dir(toolsDir) {
-          git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
-        }
-
-        unstash(name:"rootfs-${device}")
-        sh("test -f ${rootfsTarballPath}")
-        sh("mv -f ${rootfsTarballPath} ${toolsDir}")
+            stage('Prep x86_64') {
+              steps {
+                script {
+                  if (withDPDK == 'true') {
+                    return
+                    }
+                  if (buildBranch =~ /^mfw\+owrt/) {
+                    // force master
+                    branch = 'master'
+                  } else {
+                    branch = buildBranch
                   }
+
+                  dir(toolsDir) {
+                    git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+                  }
+
+                  unstash(name:"rootfs-${device}")
+                  sh("test -f ${rootfsTarballPath}")
+                  sh("mv -f ${rootfsTarballPath} ${toolsDir}")
                 }
               }
             }
 
-            if (withDPDK == false) {
-              stage('TCP services') {
-                steps {
-                  dir('mfw') {
-                    script {
-                      try {
-                        sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
-                        sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
-                      } catch (exc) {
-                        currentBuild.result = 'UNSTABLE'
-                        unstable('TCP services test failed')
-                      }
+
+
+            stage('TCP services') {
+              steps {
+                dir('mfw') {
+                  script {
+                    if (withDPDK == 'true') {
+                      // create a fake empty job to preserve coloumns in jenkins view.
+                      return
+                    }
+                    try {
+                      sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
+                      sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
+                    } catch (exc) {
+                      currentBuild.result = 'UNSTABLE'
+                      unstable('TCP services test failed')
                     }
                   }
                 }
