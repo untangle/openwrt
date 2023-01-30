@@ -52,7 +52,7 @@ pipeline {
     stage('Build') {
       steps {
         script {
-          for (build in builds) {
+          builds.each { build ->
             def myDevice = build.value.device
             def myRegion = build.value.region
             def libc = build.value.libc
