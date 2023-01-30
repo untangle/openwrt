@@ -3,6 +3,13 @@ def devices = ['x86_64',
 
 def regions = ['us', 'eu']
 
+def builds = [x86_64_us: ['device': 'x86_64', 'libc': 'musl', 'region': 'us', 'dpdk': 'false'],
+              x86_64_eu: ['device': 'x86_64', 'libc': 'musl', 'region': 'eu', 'dpdk': 'false'],
+              x86_64_us_dpdk: ['device': 'x86_64', 'libc': 'glibc', 'region': 'us', 'dpdk': 'true'],
+              espressobin_us: ['device': 'espressobin', 'libc': 'musl', 'region': 'us', 'dpdk': 'false'],
+              espressobin_eu: ['device': 'espressobin', 'libc': 'musl', 'region': 'eu', 'dpdk': 'false'],
+] 
+
 def jobs = [:] // dynamically populated later on
 
 def credentialsId = 'buildbot'
@@ -44,21 +51,12 @@ pipeline {
     stage('Build') {
       steps {
         script {
-	  for (device in devices) {
-	    def myDevice = "${device}" // FIXME: cmon now
-            for (region in regions) {
-              def myRegion = "${region}" // FIXME: cmon now
-	            def jobName = "${myDevice}_${myRegion}"
-              if (withDPDK == 'true' && device == 'espressobin') {
-                // create a fake empty job to preserve coloumns in jenkins view.
-                jobs[jobName] = {
-                  node('mfw') {
-                    state(jobName) {
-                      return 0
-                    }
-                  }
-                }
-                continue
+	  for (build in builds) {
+	    def myDevice = build.value.device
+      def myRegion = build.value.region
+	    def jobName = "${myDevice}_${myRegion}"
+              if (withDPDK == 'true') {
+                jobName = jobName + "_dpdk"
               }
 	            jobs[jobName] = {
                 node('mfw') {
@@ -73,6 +71,10 @@ pipeline {
                       buildDir = buildDir + "-" + myRegion
                       toolsDir = toolsDir + "-" + myRegion
                     }
+                    def dpdkFlag = ""
+                    if (build.value.dpdk == 'true') {
+                      dpdkFlag = "--with-dpdk"
+                    }
 
                     if (buildBranch =~ /^mfw\+owrt/) {
                       // force master
@@ -86,14 +88,8 @@ pipeline {
                     }
                     dir(buildDir) {
                       checkout scm
-                  
-                      def dpdkFlag = ""
-                      if (withDPDK == 'true') {
-                          dpdkFlag = "--with-dpdk"
-                          libc = "glibc"
-                      }
 
-                      buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
+                      buildMFW(myDevice, buid.value.libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
 
                       if (myDevice == 'x86_64' && myRegion == 'us') {
                   stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
