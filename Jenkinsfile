@@ -1,8 +1,3 @@
-def devices = ['x86_64',
-                'espressobin']
-
-def regions = ['us', 'eu']
-
 def builds = [
               x86_64_us: ['device': 'x86_64', 'libc': 'musl', 'region': 'us', 'dpdk': 'false'],
               x86_64_eu: ['device': 'x86_64', 'libc': 'musl', 'region': 'eu', 'dpdk': 'false'],
