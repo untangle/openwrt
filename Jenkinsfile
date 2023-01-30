@@ -56,7 +56,8 @@ pipeline {
             def myRegion = build.value.region
             def libc = build.value.libc
             def jobName = "${myDevice}_${myRegion}"
-            if (withDPDK == 'true') {
+
+            if (build.value.dpdk == 'true') {
               jobName = jobname + "_dpdk"
             }
             echo "Adding job ${jobName}"
