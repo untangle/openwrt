@@ -56,10 +56,10 @@ pipeline {
             def myDevice = build.value.device
             def myRegion = build.value.region
             def libc = build.value.libc
-            def jobName = "${myDevice}_${myRegion}"
+            //def jobName = "${myDevice}_${myRegion}"
 
             echo "Adding job ${build.key}"
-            jobs[jobName] = {
+            jobs[build.key] = {
               node('mfw') {
                 stage(jobName) {
                   def artifactsDir = "tmp/artifacts"
