@@ -54,6 +54,7 @@ pipeline {
           for (build in builds) {
             def myDevice = build.value.device
             def myRegion = build.value.region
+            def libc = build.value.libc
             def jobName = "${myDevice}_${myRegion}"
             if (withDPDK == 'true') {
               jobName = jobName + "_dpdk"
@@ -89,7 +90,7 @@ pipeline {
                   dir(buildDir) {
                     checkout scm
 
-                    buildMFW(myDevice, buid.value.libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
+                    buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
 
                     if (myDevice == 'x86_64' && myRegion == 'us') {
                       stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
@@ -100,89 +101,88 @@ pipeline {
                   archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
                 }
               }
-            }
+            } // jobs
           } // for loop
+          parallel jobs
         } // script
       } // steps
-	  } // stage
-    parallel jobs
-  } // stages
-
-  post {
-	  changed {
-	    script {
-	      // set result before pipeline ends, so emailer sees it
-	      currentBuild.result = currentBuild.currentResult
-      }
-      emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
-      slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
-	  }
-  }
-
-  stage('Test') {
-    parallel {
-      stage('Test x86_64') {
-        agent { label 'mfw' }
-
-        environment {
-          device = 'x86_64'
-          toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${device}"
-          rootfsTarballName = 'mfw-x86-64-generic-rootfs.tar.gz'
-          rootfsTarballPath = "bin/targets/x86/64/${rootfsTarballName}"
-          dockerfile = "${toolsDir}/docker-compose.test.yml"
+      post {
+        changed {
+          script {
+            // set result before pipeline ends, so emailer sees it
+            currentBuild.result = currentBuild.currentResult
+          }
+          emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
+          slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
         }
+      }
+  	} // stage
 
-        stages {
-          stage('Prep x86_64') {
-            steps {
-              script {
-                if (buildBranch =~ /^mfw\+owrt/) {
-                  // force master
-                  branch = 'master'
-                } else {
-                  branch = buildBranch
-                }
+    stage('Test') {
+      parallel {
+        stage('Test x86_64') {
+          agent { label 'mfw' }
 
-                dir(toolsDir) {
-                  git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
-                }
-
-                unstash(name:"rootfs-${device}")
-                sh("test -f ${rootfsTarballPath}")
-                sh("mv -f ${rootfsTarballPath} ${toolsDir}")
-              }
-            }
+          environment {
+            device = 'x86_64'
+            toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${device}"
+            rootfsTarballName = 'mfw-x86-64-generic-rootfs.tar.gz'
+            rootfsTarballPath = "bin/targets/x86/64/${rootfsTarballName}"
+            dockerfile = "${toolsDir}/docker-compose.test.yml"
           }
 
-          stage('TCP services') {
-            steps {
-              dir('mfw') {
+          stages {
+            stage('Prep x86_64') {
+              steps {
                 script {
-                  try {
-                    sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
-                    sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
-                  } catch (exc) {
-                    currentBuild.result = 'UNSTABLE'
-                    unstable('TCP services test failed')
+                  if (buildBranch =~ /^mfw\+owrt/) {
+                    // force master
+                    branch = 'master'
+                  } else {
+                    branch = buildBranch
+                  }
+
+                  dir(toolsDir) {
+                    git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+                  }
+
+                  unstash(name:"rootfs-${device}")
+                  sh("test -f ${rootfsTarballPath}")
+                  sh("mv -f ${rootfsTarballPath} ${toolsDir}")
+                }
+              }
+            }
+
+            stage('TCP services') {
+              steps {
+                dir('mfw') {
+                  script {
+                    try {
+                      sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
+                      sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
+                    } catch (exc) {
+                      currentBuild.result = 'UNSTABLE'
+                      unstable('TCP services test failed')
+                    }
                   }
                 }
               }
             }
-          }
-        } // stages
-      } // stage
-    } // parallel
+          } // stages
+        } // stage
+      } // parallel
 
-    post {
-      changed {
-        script {
-          // set result before pipeline ends, so emailer sees it
-          currentBuild.result = currentBuild.currentResult
+      post {
+        changed {
+          script {
+            // set result before pipeline ends, so emailer sees it
+            currentBuild.result = currentBuild.currentResult
+          }
+          emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
+          slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
         }
-        emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
-        slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
       }
-    }
-  } // stage Test
+    } // stage Test
+  } // stages
 } // pipeline
 
