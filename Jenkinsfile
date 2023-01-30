@@ -51,96 +51,31 @@ pipeline {
     stage('Build') {
       steps {
         script {
-	  for (build in builds) {
-	    def myDevice = build.value.device
-      def myRegion = build.value.region
-	    def jobName = "${myDevice}_${myRegion}"
-              if (withDPDK == 'true') {
-                jobName = jobName + "_dpdk"
-              }
-	            jobs[jobName] = {
-                node('mfw') {
-                  stage(jobName) {
-                    def artifactsDir = "tmp/artifacts"
-
-                    // default values for US build
-                    def buildDir = "${env.HOME}/build-mfw-${buildBranch}-${myDevice}"
-                    def toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${myDevice}"
-
-                    if (myRegion != 'us') {
-                      buildDir = buildDir + "-" + myRegion
-                      toolsDir = toolsDir + "-" + myRegion
-                    }
-                    def dpdkFlag = ""
-                    if (build.value.dpdk == 'true') {
-                      dpdkFlag = "--with-dpdk"
-                    }
-
-                    if (buildBranch =~ /^mfw\+owrt/) {
-                      // force master
-                      branch = 'master'
-                    } else {
-                      branch = buildBranch
-                    }
-
-                    dir(toolsDir) {
-                      git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
-                    }
-                    dir(buildDir) {
-                      checkout scm
-
-                      buildMFW(myDevice, buid.value.libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
-
-                      if (myDevice == 'x86_64' && myRegion == 'us') {
-                  stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
-                      }
-
-                      archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
-                    }
-                    archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
-                  }
-                }
-	      }
+          for (build in builds) {
+            def myDevice = build.value.device
+            def myRegion = build.value.region
+            def jobName = "${myDevice}_${myRegion}"
+            if (withDPDK == 'true') {
+              jobName = jobName + "_dpdk"
             }
-	  }
+            jobs[jobName] = {
+              node('mfw') {
+                stage(jobName) {
+                  def artifactsDir = "tmp/artifacts"
 
-          parallel jobs
-        }
-      }
+                  // default values for US build
+                  def buildDir = "${env.HOME}/build-mfw-${buildBranch}-${myDevice}"
+                  def toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${myDevice}"
 
-      post {
-	changed {
-	  script {
-	    // set result before pipeline ends, so emailer sees it
-	    currentBuild.result = currentBuild.currentResult
-          }
-          emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
-          slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
-	}
-      }
-    }
+                  if (myRegion != 'us') {
+                    buildDir = buildDir + "-" + myRegion
+                    toolsDir = toolsDir + "-" + myRegion
+                  }
+                  def dpdkFlag = ""
+                  if (build.value.dpdk == 'true') {
+                    dpdkFlag = "--with-dpdk"
+                  }
 
-    stage('Test') {
-      parallel {
-        stage('Test x86_64') {
-	  agent { label 'mfw' }
-
-          environment {
-            device = 'x86_64'
-            toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${device}"
-	    rootfsTarballName = 'mfw-x86-64-generic-rootfs.tar.gz'
-	    rootfsTarballPath = "bin/targets/x86/64/${rootfsTarballName}"
-	    dockerfile = "${toolsDir}/docker-compose.test.yml"
-          }
-
-          stages {
-
-            stage('Prep x86_64') {
-              steps {
-                script {
-                  if (withDPDK == 'true') {
-                    return
-                    }
                   if (buildBranch =~ /^mfw\+owrt/) {
                     // force master
                     branch = 'master'
@@ -151,50 +86,103 @@ pipeline {
                   dir(toolsDir) {
                     git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
                   }
+                  dir(buildDir) {
+                    checkout scm
 
-                  unstash(name:"rootfs-${device}")
-                  sh("test -f ${rootfsTarballPath}")
-                  sh("mv -f ${rootfsTarballPath} ${toolsDir}")
+                    buildMFW(myDevice, buid.value.libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
+
+                    if (myDevice == 'x86_64' && myRegion == 'us') {
+                      stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
+                    }
+
+                    archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
+                  }
+                  archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
                 }
               }
             }
+          } // for loop
+        } // script
+      } // steps
+	  } // stage
+    parallel jobs
+  } // stages
 
+  post {
+	  changed {
+	    script {
+	      // set result before pipeline ends, so emailer sees it
+	      currentBuild.result = currentBuild.currentResult
+      }
+      emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
+      slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
+	  }
+  }
 
+  stage('Test') {
+    parallel {
+      stage('Test x86_64') {
+        agent { label 'mfw' }
 
-            stage('TCP services') {
-              steps {
-                dir('mfw') {
-                  script {
-                    if (withDPDK == 'true') {
-                      // create a fake empty job to preserve coloumns in jenkins view.
-                      return
-                    }
-                    try {
-                      sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
-                      sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
-                    } catch (exc) {
-                      currentBuild.result = 'UNSTABLE'
-                      unstable('TCP services test failed')
-                    }
+        environment {
+          device = 'x86_64'
+          toolsDir = "${env.HOME}/tools-mfw-${buildBranch}-${device}"
+          rootfsTarballName = 'mfw-x86-64-generic-rootfs.tar.gz'
+          rootfsTarballPath = "bin/targets/x86/64/${rootfsTarballName}"
+          dockerfile = "${toolsDir}/docker-compose.test.yml"
+        }
+
+        stages {
+          stage('Prep x86_64') {
+            steps {
+              script {
+                if (buildBranch =~ /^mfw\+owrt/) {
+                  // force master
+                  branch = 'master'
+                } else {
+                  branch = buildBranch
+                }
+
+                dir(toolsDir) {
+                  git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+                }
+
+                unstash(name:"rootfs-${device}")
+                sh("test -f ${rootfsTarballPath}")
+                sh("mv -f ${rootfsTarballPath} ${toolsDir}")
+              }
+            }
+          }
+
+          stage('TCP services') {
+            steps {
+              dir('mfw') {
+                script {
+                  try {
+                    sh("docker-compose -f ${dockerfile} build --build-arg ROOTFS_TARBALL=${rootfsTarballName} mfw")
+                    sh("docker-compose -f ${dockerfile} up --abort-on-container-exit --exit-code-from test")
+                  } catch (exc) {
+                    currentBuild.result = 'UNSTABLE'
+                    unstable('TCP services test failed')
                   }
                 }
               }
             }
           }
-        }
-      }
+        } // stages
+      } // stage
+    } // parallel
 
-      post {
-	changed {
-	  script {
-	    // set result before pipeline ends, so emailer sees it
-	    currentBuild.result = currentBuild.currentResult
-          }
-          emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
-          slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
-	}
+    post {
+      changed {
+        script {
+          // set result before pipeline ends, so emailer sees it
+          currentBuild.result = currentBuild.currentResult
+        }
+        emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
+        slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
       }
     }
+  } // stage Test
+} // pipeline
 
-  }
-}
