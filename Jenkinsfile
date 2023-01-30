@@ -56,7 +56,7 @@ pipeline {
             def myDevice = build.value.device
             def myRegion = build.value.region
             def libc = build.value.libc
-            //def jobName = "${myDevice}_${myRegion}"
+            def jobName = build.key
 
             echo "Adding job ${build.key}"
             jobs[build.key] = {
