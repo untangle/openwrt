@@ -83,7 +83,7 @@ pipeline {
                   } else {
                     branch = buildBranch
                   }
-
+                  echo "Building ${build.key} with branch ${branch}"
                   dir(toolsDir) {
                     git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
                   }
