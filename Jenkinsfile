@@ -102,8 +102,8 @@ pipeline {
                 }
               }
             } // jobs
-          parallel jobs
           } // for loop
+        parallel jobs
         } // script
       } // steps
       post {
