@@ -36,11 +36,9 @@ pipeline {
   }
 
   parameters {
-    choice(name:'libc', choices:['musl', 'glibc'], description:'libc to link against')
     string(name:'buildBranch', defaultValue:env.BRANCH_NAME, description:'branch to use for feeds.git and mfw_build.git')
     choice(name:'startClean', choices:['false', 'true'], description:'start clean')
     string(name:'makeOptions', defaultValue:'-j32', description:'options passed directly to make')
-    choice(name:'withDPDK', choices:['false', 'true'], description:'Include DPDK. (glibc only)')
   }
 
   stages {
@@ -52,6 +50,7 @@ pipeline {
             def myRegion = build.value.region
             def libc = build.value.libc
             def jobName = build.key
+            def option = ""
 
             echo "Adding job ${build.key}"
             jobs[build.key] = {
@@ -70,6 +69,7 @@ pipeline {
                   def dpdkFlag = ""
                   if (build.value.dpdk == 'true') {
                     dpdkFlag = "--with-dpdk"
+                    option = "dpdk"
                   }
 
                   if (buildBranch =~ /^mfw\+owrt/) {
@@ -91,7 +91,7 @@ pipeline {
                       stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
                     }
 
-                    archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}")
+                    archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}/${option}")
                   }
                   archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
                 }
