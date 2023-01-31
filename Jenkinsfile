@@ -51,6 +51,7 @@ pipeline {
             def libc = build.value.libc
             def jobName = build.key
             def option = ""
+            def dpdkFlag = ""
 
             echo "Adding job ${build.key}"
             jobs[build.key] = {
@@ -66,10 +67,11 @@ pipeline {
                     buildDir = buildDir + "-" + myRegion
                     toolsDir = toolsDir + "-" + myRegion
                   }
-                  def dpdkFlag = ""
+                  
                   if (build.value.dpdk == 'true') {
                     dpdkFlag = "--with-dpdk"
                     option = "dpdk"
+                    startClean = "true" // always start clean for dpdk, otherwise we tend to fail.
                   }
 
                   if (buildBranch =~ /^mfw\+owrt/) {
