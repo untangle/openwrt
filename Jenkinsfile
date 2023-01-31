@@ -71,7 +71,7 @@ pipeline {
                   if (build.value.dpdk == 'true') {
                     dpdkFlag = "--with-dpdk"
                     option = "dpdk"
-                    startClean = "true" // always start clean for dpdk, otherwise we tend to fail.
+                    // startClean = "true" // always start clean for dpdk, otherwise we tend to fail.
                   }
 
                   if (buildBranch =~ /^mfw\+owrt/) {
