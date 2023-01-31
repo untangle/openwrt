@@ -95,7 +95,7 @@ pipeline {
 
                     archiveMFW(myDevice, myRegion, toolsDir, "${env.WORKSPACE}/${artifactsDir}/${option}")
                   }
-                  archiveArtifacts artifacts:"${artifactsDir}/*", fingerprint:true
+                  archiveArtifacts artifacts:"${artifactsDir}/**/*", fingerprint:true
                 }
               }
             } // jobs
