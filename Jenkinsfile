@@ -91,7 +91,7 @@ pipeline {
 
                     buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
 
-                    if (myDevice == 'x86_64' && myRegion == 'us') {
+                    if (myDevice == 'x86_64' && myRegion == 'us' && build.value.dpdk == 'false') {
                       stash(name:"rootfs-${myDevice}", includes:"bin/targets/**/*generic-rootfs.tar.gz")
                     }
 
