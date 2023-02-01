@@ -71,6 +71,8 @@ pipeline {
                   if (build.value.dpdk == 'true') {
                     dpdkFlag = "--with-dpdk"
                     option = "dpdk"
+                    buildDir = buildDir + "-dpdk"
+                    toolsDir = toolsDir + "-dpdk"
                     // startClean = "true" // always start clean for dpdk, otherwise we tend to fail.
                   }
 
