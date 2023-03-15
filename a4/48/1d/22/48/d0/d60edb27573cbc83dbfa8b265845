@@ -12,7 +12,7 @@
     "commit": "12a3314c6ea80d957e7024ede64f2ff65066e0f6"
   },
   "barney.ci/golang": {
-    "commit": "25bbccd5fd92055a87d0d0402207ee0586fbef2e"
+    "commit": "9a8595bcdc42c8d33678e3447b51fe89470306d9"
   },
   "code.arista.io/mfw/build": {
     "commit": "6576550419876bdda9e1a69b3bb7fff3637590c4"
