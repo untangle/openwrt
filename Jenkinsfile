@@ -76,15 +76,32 @@ pipeline {
                     // startClean = "true" // always start clean for dpdk, otherwise we tend to fail.
                   }
 
-                  if (buildBranch =~ /^mfw\+owrt/) {
-                    // force master
-                    branch = 'master'
-                  } else {
-                    branch = buildBranch
+                  switch (buildBranch) {
+		    case ~/^mfw\+owrt_22\.03/:
+                      branch = 'master'
+                      // we need a dedicated tools branch because we need:
+                      // - a build.sh change that cannot be merged into
+                      //   master for now
+                      // - mfw.feeds.conf to point to a dedicated feeds
+                      //   branch
+                      toolsBranch = 'owrt_22.03'
+                      // even with the build.sh change, we can't build
+                      // incrementally until upstream solves their issue
+                      startClean = 'true'
+                      break
+		    case ~/^mfw\+owrt/:
+                      // force master
+                      branch = 'master'
+                      toolsBranch = 'master'
+                      break
+                    default:		      
+                      branch = buildBranch
+                      toolsBranch = buildBranch
+                      break
                   }
-                  echo "Building ${build.key} with branch ${branch}"
+                  echo "Building ${build.key} with branch ${branch} and tools ${toolsBranch}"
                   dir(toolsDir) {
-                    git url:"git@github.com:untangle/mfw_build", branch:branch, credentialsId:credentialsId
+                    git url:"git@github.com:untangle/mfw_build", branch:toolsBranch, credentialsId:credentialsId
                   }
                   dir(buildDir) {
                     checkout scm
