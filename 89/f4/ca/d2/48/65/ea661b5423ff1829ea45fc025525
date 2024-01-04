@@ -17,6 +17,9 @@
   "barney.ci/golang": {
     "commit": "8ddeed6bfa8ad35eefa2840ca790275e8a8ce50b"
   },
+  "barney.ci/model": {
+    "commit": "e3779c8cf557a4fb108f07910304b8a1e5e43699"
+  },
   "code.arista.io/mfw/build": {
     "commit": "f4a134330ce47d8d1bbdb8408323e461aab3fcfd"
   },
