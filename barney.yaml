@@ -61,7 +61,6 @@ images:
         CONFIG_LIBC_USE_MUSL=y
         # CONFIG_VDI_IMAGES is not set
         # CONFIG_VMDK_IMAGES is not set
-        # CONFIG_ESXI_VMDK_IMAGES is not set
         EOF
         make -j $(nproc) defconfig download world
         # extract FS content into destination image
