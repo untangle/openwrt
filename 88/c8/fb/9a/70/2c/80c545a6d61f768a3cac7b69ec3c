@@ -1,0 +1,29 @@
+{
+  "": {
+    "commit": "88c8fb9a702c80c545a6d61f768a3cac7b69ec3c"
+  },
+  "barney.ci/alpine": {
+    "commit": "f2fa545e3fafa3387f2d7269721d16f3f499cc3b"
+  },
+  "barney.ci/barneyfile": {
+    "commit": "ed88c1c8bb4f634a5ec1b75578cd10a63dd31585"
+  },
+  "barney.ci/debian": {
+    "commit": "a8b990da6e74b41609db2a4233dc157378b3c213"
+  },
+  "barney.ci/docker": {
+    "commit": "dcb450791c55d7ce31d648fecd7ee75ffbe92815"
+  },
+  "barney.ci/golang": {
+    "commit": "d7f023afaa04440c08ad00296fe3dd01b7f5c437"
+  },
+  "barney.ci/model": {
+    "commit": "f11eb1e1459dd6ac88b10802d6e04bf3f6a93c7a"
+  },
+  "code.arista.io/mfw/build": {
+    "commit": "5354fa8daab25b4898027ca3006e366677344540"
+  },
+  "github.com/golang/go": {
+    "commit": "194de8fbfaf4c3ed54e1a3c1b14fc67a830b8d95"
+  }
+}
