@@ -24,12 +24,12 @@ void archiveMFW(String device, String region, String toolsDir, String artifactsD
 * Retrieves list of causes that generated job execution
 *
 * @return list
-*/
+
 def getCauses() {
 
     return currentBuild.rawBuild.getCauses().collect { it.getClass().getCanonicalName().tokenize('.').last() }
 
-}
+}*/
 
 pipeline {
   agent none
