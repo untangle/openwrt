@@ -19,6 +19,18 @@ void archiveMFW(String device, String region, String toolsDir, String artifactsD
   sh "${toolsDir}/version-images.sh -d ${device} -r ${region} -o ${artifactsDir} -c -t \$(cat tmp/version.date)"
 }
 
+
+/**
+* Retrieves list of causes that generated job execution
+*
+* @return list
+*/
+List getCauses() {
+
+    return currentBuild.rawBuild.getCauses().collect { it.getClass().getCanonicalName().tokenize('.').last() }
+
+}
+
 pipeline {
   agent none
 
@@ -31,6 +43,7 @@ pipeline {
   triggers {
     upstream(upstreamProjects:"packetd/${env.BRANCH_NAME}, reportd/${env.BRANCH_NAME}, restd/${env.BRANCH_NAME}, sync-settings/${env.BRANCH_NAME}, classd/${env.BRANCH_NAME}, bctid/${env.BRANCH_NAME}, feeds/${env.BRANCH_NAME}, admin/${env.BRANCH_NAME}, mfw_ui/${env.BRANCH_NAME}, mfw_build/${env.BRANCH_NAME}, bpfgen/${env.BRANCH_NAME}, client-license-service/${env.BRANCH_NAME}, support-diagnostics/${env.BRANCH_NAME}, discoverd/${env.BRANCH_NAME}, wan-utils/${env.BRANCH_NAME}",
              threshold: hudson.model.Result.SUCCESS)
+    cron('0 */12 * * *')
   }
 
   parameters {
@@ -91,6 +104,11 @@ pipeline {
                   }
                   dir(buildDir) {
                     checkout scm
+
+                    echo getCauses()
+                    if (getCauses() == ['TimerTriggerCause']) {
+                      startClean = true
+                    }
 
                     buildMFW(myDevice, libc, myRegion, startClean, makeOptions, dpdkFlag, branch, toolsDir, credentialsId)
 
