@@ -25,7 +25,7 @@ void archiveMFW(String device, String region, String toolsDir, String artifactsD
 *
 * @return list
 */
-List getCauses() {
+def getCauses() {
 
     return currentBuild.rawBuild.getCauses().collect { it.getClass().getCanonicalName().tokenize('.').last() }
 
