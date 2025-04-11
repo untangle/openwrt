@@ -1,6 +1,7 @@
 def branchMap = ['mfw+owrt_19.07': 'openwrt-19.07',
                  'mfw+owrt_21.02': 'openwrt-21.02',
                  'mfw+owrt_22.03': 'openwrt-22.03',
+                 'mfw+owrt_23.05': 'openwrt-23.05',
                  'mfw+owrt_master': 'master']
 
 def upstreamRepo = 'https://github.com/openwrt/openwrt.git'
