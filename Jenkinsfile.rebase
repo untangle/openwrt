@@ -1,0 +1,45 @@
+def branchMap = ['mfw+owrt_19.07': 'openwrt-19.07',
+                 'mfw+owrt_21.02': 'openwrt-21.02',
+                 'mfw+owrt_22.03': 'openwrt-22.03',
+                 'mfw+owrt_23.05': 'openwrt-23.05',
+                 'mfw+owrt_master': 'master']
+
+def upstreamRepo = 'https://github.com/openwrt/openwrt.git'
+
+def credentialsId = 'buildbot'
+
+void rebase(String localBranch, String upstreamRepo, String upstreamBranch, String credentialsId) {
+  sshagent (credentials:[credentialsId]) {
+    sh "git remote show upstream || git remote add upstream ${upstreamRepo}"
+    sh "git fetch --tags upstream"
+    sh "git rebase upstream/${upstreamBranch}"
+    sh "git push -f --tags origin ${localBranch}:${localBranch}"
+  }
+}
+
+pipeline {
+  agent any
+
+  triggers {
+    cron('@daily')
+  }
+
+  stages {
+    stage('Rebase') {
+      steps {
+        rebase(env.BRANCH_NAME, upstreamRepo, branchMap[env.BRANCH_NAME], credentialsId)
+      }
+
+      post {
+	changed {
+	  script {
+	    // set result before pipeline ends, so emailer sees it
+	    currentBuild.result = currentBuild.currentResult
+          }
+          // emailext(to:'nfgw-engineering@untangle.com', subject:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result}", body:"${env.BUILD_URL}")
+          // slackSend(channel:"#team_engineering", message:"${env.JOB_NAME} #${env.BUILD_NUMBER}: ${currentBuild.result} at ${env.BUILD_URL}")
+	}
+      }
+    }
+  }
+}
