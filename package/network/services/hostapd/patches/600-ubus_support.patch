@@ -458,7 +458,7 @@
  }
  
  
-@@ -350,6 +353,9 @@ void hostapd_handle_radio_measurement(st
+@@ -352,6 +355,9 @@ void hostapd_handle_radio_measurement(st
  		   mgmt->u.action.u.rrm.action, MAC2STR(mgmt->sa));
  
  	switch (mgmt->u.action.u.rrm.action) {
