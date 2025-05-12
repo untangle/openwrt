@@ -79,7 +79,9 @@ pipeline {
                     artifactsDir = artifactsDir + "/dpdk"
                   }
 
-                  if (buildBranch =~ /^mfw\+owrt/) {
+                  if (buildBranch == 'mfw+owrt_23.05') {
+                    branch = buildBranch
+                  } else if (buildBranch =~ /^mfw\+owrt/) {
                     // force master
                     branch = 'master'
                   } else {
@@ -137,7 +139,9 @@ pipeline {
             stage('Prep x86_64') {
               steps {
                 script {
-                  if (buildBranch =~ /^mfw\+owrt/) {
+                  if (buildBranch == 'mfw+owrt_23.05') {
+                    branch = buildBranch
+                  } else if (buildBranch =~ /^mfw\+owrt/) {
                     // force master
                     branch = 'master'
                   } else {
