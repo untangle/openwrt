@@ -15,7 +15,7 @@
     "commit": "dcb450791c55d7ce31d648fecd7ee75ffbe92815"
   },
   "barney.ci/golang": {
-    "commit": "2988f6cf24e21ef39daf513a8116102f2b3e1d34"
+    "commit": "8fda61c3408cae5b10fc7d4ee0e794e39e7a9816"
   },
   "barney.ci/model": {
     "commit": "521f2d66de5034389856793e669cf070cfea0569"
@@ -24,6 +24,6 @@
     "commit": "a52fc092cbe9773245a0301de638d72b7673522e"
   },
   "github.com/golang/go": {
-    "commit": "6796ebb2cb66b316a07998cdcd69b1c486b8579e"
+    "commit": "9d828e80fa1f3cc52de60428cae446b35b576de8"
   }
 }
