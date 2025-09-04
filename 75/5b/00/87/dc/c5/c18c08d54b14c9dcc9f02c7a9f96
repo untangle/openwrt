@@ -1,7 +1,6 @@
 {
   "": {
-    "commit": "755b0087dcc5c18c08d54b14c9dcc9f02c7a9f96",
-    "url": "https://github.com/untangle/openwrt.git"
+    "commit": "755b0087dcc5c18c08d54b14c9dcc9f02c7a9f96"
   },
   "barney.ci/alpine": {
     "commit": "0c8ae2605c6287893aacb61674edfc8abec3a96e"
@@ -25,6 +24,6 @@
     "commit": "d88bfee2028b2e27101ea033a4a3986aacc5888f"
   },
   "github.com/golang/go": {
-    "commit": "6e676ab2b809d46623acb5988248d95d1eb7939c"
+    "commit": "56ebf80e57db9f61981fc0636fc6419dc6f68eda"
   }
 }
