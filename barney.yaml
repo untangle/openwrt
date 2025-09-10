@@ -38,6 +38,9 @@ images:
       Check that we can run a couple of utilities
     units:
     - floor: .%build-floor
+      quota:
+        memory: 20Mi
+        cpu: 1
       build: |
         make --version
         python3 --version
@@ -45,6 +48,9 @@ images:
   world:
     units:
     - floor: .%build-floor
+      quota:
+        memory: 24Gi
+        cpu: 32
       build: |
         set -e
         # barney sets DESTDIR to /dest, but this really confuses openwrt
@@ -63,13 +69,22 @@ images:
         # CONFIG_VMDK_IMAGES is not set
         # CONFIG_ESXI_VMDK_IMAGES is not set
         EOF
-        make -j $(nproc) defconfig download world
+
+        # Barney team recommends hardcoding number here
+        make -j 64 defconfig download world
         # extract FS content into destination image
         tar -C /dest -xavf bin/targets/x86/64/*-generic-rootfs.tar.gz 
 
   test/world:
     units:
       - floor: .%world
+        quota:
+          memory: 10Mi
+          cpu: 1
         build: |
           set -e
-          date
+          ls -la /etc/openwrt_release
+          ls -la /etc/openwrt_version
+
+          ldd /bin/ls | grep musl
+
