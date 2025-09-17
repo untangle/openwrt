@@ -39,7 +39,7 @@ images:
     units:
       - floor: .%build-floor
         quota:
-          memory: 20Mi
+          memory: 500Mi
           cpu: 1
         build: |
           make --version
@@ -79,7 +79,7 @@ images:
     units:
       - floor: .%world
         quota:
-          memory: 10Mi
+          memory: 500Mi
           cpu: 1
         build: |
           set -e
