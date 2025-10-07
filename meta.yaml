@@ -1,4 +1,4 @@
-reponame: github.com/untangle/openwrt
+reponame: code.arista.io/efw/openwrt
 description: |
   MFW fork of openwrt/openwrt, with minimal patches
 users:
@@ -55,4 +55,8 @@ x-github-bridge:
           branch-re: ^master$
         - type: push
           branch-re: ^master$
-epoch: 1
+
+ObsoleteNames:
+  - github.com/untangle/openwrt
+
+epoch: 2
