@@ -1,0 +1,32 @@
+---
+- job:
+    name: efw__openwrt__test-build-floor
+    description: "efw/openwrt: Test build-floor image"
+    parent: barney-test
+    success-message: efw/openwrt build-floor test passed ☺️
+    failure-message: efw/openwrt build-floor test failed 🧐, review the job output
+    tags:
+      - efw
+    vars:
+      b5_image_name: test/build-floor
+- job:
+    name: efw__openwrt__test-world
+    description: "efw/openwrt: Test world image"
+    parent: barney-test
+    success-message: efw/openwrt world test passed ☺️
+    failure-message: efw/openwrt world test failed 🧐, review the job output
+    tags:
+      - efw
+    vars:
+      b5_image_name: test/world
+
+- project:
+    description: "Untangle EFW (edge-firewall) MFW fork of openwrt/openwrt, with minimal patches"
+    check: &check_jobs_config
+      jobs:
+        - efw__openwrt__test-build-floor
+        - efw__openwrt__test-world
+    # to enable gate job (automerge) uncomment the line below
+    # gate: *check_jobs_config
+    vars:
+      b5_repo_name: code.arista.io/efw/openwrt

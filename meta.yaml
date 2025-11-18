@@ -37,24 +37,6 @@ users:
     - tkovalev@arista.com
 x-bar:
   version: production
-x-github-bridge:
-  reviews:
-    - image: test/build-floor
-      events:
-        - type: merge_group
-          branch-re: ^master$
-        - type: pull_request
-          branch-re: ^master$
-        - type: push
-          branch-re: ^master$
-    - image: test/world
-      events:
-        - type: merge_group
-          branch-re: ^master$
-        - type: pull_request
-          branch-re: ^master$
-        - type: push
-          branch-re: ^master$
 
 ObsoleteNames:
   - github.com/untangle/openwrt
