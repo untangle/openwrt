@@ -41,6 +41,7 @@ images:
         quota:
           memory: 500Mi
           cpu: 1
+        entry: {network: {enabled: false}}
         build: |
           make --version
           python3 --version
@@ -51,6 +52,13 @@ images:
         quota:
           memory: 24Gi
           cpu: 32
+        entry:
+          network:
+            enabled: true
+            firewall:
+              # Accessed domains (43): alpha.gnu.org., cdn.kernel.org., ... , www.tcpdump.org.
+              allow: ["fwgroup:any"]
+              deny: ["fwgroup:any"]
         build: |
           set -e
           # barney sets DESTDIR to /dest, but this really confuses openwrt
@@ -81,6 +89,7 @@ images:
         quota:
           memory: 500Mi
           cpu: 1
+        entry: {network: {enabled: false}}
         build: |
           set -e
           ls -la /etc/openwrt_release
